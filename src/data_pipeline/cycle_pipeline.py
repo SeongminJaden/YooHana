@@ -633,6 +633,7 @@ def _run_crawl(
             hashtags=all_hashtags,
             search_keywords=all_searches,
             posts_per_source=count,
+            posts_per_user=5,
             crawl_explore=True,
             crawl_reels_feed=False,
         )

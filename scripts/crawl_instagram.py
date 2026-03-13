@@ -18,43 +18,37 @@ logger = get_logger()
 
 
 # ==========================================================
-# 한국 라이프스타일/패션 인플루언서 (공개 계정)
+# 한국 라이프스타일/패션 인플루언서 (공개 계정) - 다양성을 위해 많은 계정
 # ==========================================================
 TARGET_USERS = [
-    "ch_eeze",           # 감성/일상
-    "hwa.min",           # 패션/뷰티
-    "soovely_",          # 카페/일상
-    "dear.zia",          # 패션/일상
-    "minhee_0610",       # OOTD/일상
-    "soyou_x",           # 패션
+    # 감성/일상
+    "ch_eeze", "_yujin__", "m.by" , "min.nicha",
+    # 패션/OOTD
+    "hwa.min", "dear.zia", "minhee_0610", "soyou_x",
+    "o_oing_", "joyurizz", "s2.__.s2",
+    # 카페/맛집
+    "soovely_", "cafe_log_", "today_is_yum",
+    # 라이프스타일
+    "dailyjjang", "soi_todaylog", "s_unday.log",
 ]
+
+# 계정당 수집 개수 (다양한 계정에서 조금씩)
+POSTS_PER_USER = 5
 
 # 한국어 해시태그
 TARGET_HASHTAGS = [
-    "일상스타그램",
-    "카페스타그램",
-    "데일리룩",
-    "서울카페",
-    "오오티디",
-    "감성스타그램",
-    "맛집스타그램",
-    "봄코디",
-    "패션스타그램",
-    "셀스타그램",
-    "코디추천",
-    "서울맛집",
-    "한강",
-    "피크닉",
+    "일상스타그램", "카페스타그램", "데일리룩", "서울카페",
+    "오오티디", "감성스타그램", "맛집스타그램", "봄코디",
+    "패션스타그램", "셀스타그램", "코디추천", "서울맛집",
+    "한강", "피크닉", "브이로그", "자연스타그램",
+    "봄스타그램", "데일리코디", "서울라이프", "감성카페",
 ]
 
 # 한국어 검색 키워드
 SEARCH_KEYWORDS = [
-    "일상 브이로그",
-    "서울 카페 추천",
-    "봄 데일리룩",
-    "한국 패션 코디",
-    "감성 사진",
-    "서울 핫플레이스",
+    "일상 브이로그", "서울 카페 추천", "봄 데일리룩",
+    "한국 패션 코디", "감성 사진", "서울 핫플레이스",
+    "카페 투어", "오늘의 코디", "주말 나들이",
 ]
 
 
@@ -90,7 +84,7 @@ def main():
         elif args.mode == "users":
             stats = crawler.bulk_crawl(
                 usernames=TARGET_USERS,
-                posts_per_source=args.count,
+                posts_per_source=POSTS_PER_USER,
                 crawl_explore=False,
                 crawl_reels_feed=False,
             )
@@ -126,11 +120,13 @@ def main():
             )
 
         elif args.mode == "full":
+            # 유저: 계정당 POSTS_PER_USER개, 해시태그/검색: args.count개
             stats = crawler.bulk_crawl(
                 usernames=TARGET_USERS,
                 hashtags=TARGET_HASHTAGS,
                 search_keywords=SEARCH_KEYWORDS,
                 posts_per_source=args.count,
+                posts_per_user=POSTS_PER_USER,
                 crawl_explore=True,
                 crawl_reels_feed=True,
             )

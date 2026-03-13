@@ -939,13 +939,23 @@ class InstagramBrowserCrawler:
         hashtags: list[str] = None,
         search_keywords: list[str] = None,
         posts_per_source: int = 20,
+        posts_per_user: int | None = None,
         crawl_explore: bool = True,
         crawl_reels_feed: bool = True,
     ) -> dict[str, Any]:
-        """Run comprehensive crawl across all sources."""
+        """Run comprehensive crawl across all sources.
+
+        Parameters
+        ----------
+        posts_per_user : int | None
+            유저당 수집 게시글 수. None이면 posts_per_source와 동일.
+            다양한 유저에서 조금씩 수집하려면 작은 값(3-5)으로 설정.
+        """
         logger.info("=" * 60)
         logger.info("BULK CRAWL STARTING")
         logger.info("=" * 60)
+
+        user_count = posts_per_user if posts_per_user is not None else posts_per_source
 
         self._all_collected = []
         stats = {"users": 0, "hashtags": 0, "searches": 0, "total": 0}
@@ -953,7 +963,7 @@ class InstagramBrowserCrawler:
         if usernames:
             for u in usernames:
                 try:
-                    self.crawl_user(u, max_posts=posts_per_source)
+                    self.crawl_user(u, max_posts=user_count)
                     stats["users"] += 1
                 except Exception as exc:
                     logger.error("Failed @{}: {}", u, exc)
