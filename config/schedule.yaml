@@ -1,0 +1,50 @@
+# AI Influencer - Scheduling Rules
+
+timezone: "Asia/Seoul"
+
+# Jitter: random offset added to all scheduled times
+jitter_minutes: 15
+
+# Content planning
+planning:
+  weekly:
+    day: "monday"
+    hour: 6
+    minute: 0
+
+# Posting schedule
+posting:
+  check_interval_minutes: 60
+  optimal_hours:
+    weekday: [11, 12, 18, 19, 20, 21]
+    weekend: [10, 11, 14, 15, 19, 20, 21]
+  max_posts_per_day: 2
+  min_hours_between_posts: 4
+
+# Comment monitoring
+comments:
+  check_interval_minutes: 30
+  peak_hours:
+    start: 10
+    end: 22
+  off_peak_interval_minutes: 120
+  max_replies_per_check: 5
+
+# Story posting
+stories:
+  enabled: true
+  max_per_day: 3
+  optimal_hours: [9, 13, 20]
+
+# Trend analysis
+trend_analysis:
+  check_interval_hours: 6
+  optimal_hours: [8, 14, 20]
+  max_reels_per_day: 1
+
+# Engagement (liking/commenting on other posts)
+engagement:
+  enabled: true
+  check_interval_minutes: 120
+  max_likes_per_session: 10
+  max_comments_per_session: 3

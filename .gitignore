@@ -1,0 +1,56 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# Models (large files)
+models/base/
+models/adapter/
+models/merged/
+
+# Data
+data/raw/
+data/processed/
+data/reference_images/
+data/media/
+data/browser_session/
+data/cycle_state.json
+data/training/crawled_captions.jsonl
+
+# Outputs
+outputs/images/
+outputs/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Weights & Biases
+wandb/
+
+# Instagram sessions
+instagram_session.json
+*.session
+
+# Misc
+*.log
+.cache/

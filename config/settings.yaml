@@ -1,0 +1,65 @@
+# AI Influencer - Global Settings
+
+app:
+  name: "AI Influencer"
+  timezone: "Asia/Seoul"
+  debug: false
+
+# Model settings
+model:
+  base_model: "kakaocorp/kanana-nano-2.1b-instruct"
+  fallback_model: "Qwen/Qwen2.5-1.5B-Instruct"
+  adapter_path: "models/adapter"
+  merged_path: "models/merged"
+  max_seq_length: 512
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_quant_type: "nf4"
+    bnb_4bit_use_double_quant: true
+    bnb_4bit_compute_dtype: "bfloat16"
+
+# Generation parameters
+generation:
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repetition_penalty: 1.15
+  max_new_tokens: 256
+
+# Image generation
+image:
+  model: "gemini-2.0-flash-exp"
+  feed_size: [1080, 1350]
+  story_size: [1080, 1920]
+  reference_count: 3
+  output_dir: "outputs/images"
+
+# Instagram settings
+instagram:
+  session_file: "instagram_session.json"
+  rate_limits:
+    comments_per_hour: 10
+    likes_per_hour: 30
+    posts_per_day: 2
+    delay_min: 2.0
+    delay_max: 5.0
+  warmup_days: 21
+
+# Trend analysis
+trend_analysis:
+  enabled: true
+  scrape_count: 20
+  analysis_interval_hours: 6
+  min_engagement_score: 100
+  reels_output_dir: "outputs/reels"
+  reel_duration_default: 15.0
+  reel_size: [1080, 1920]
+  whisper_model: "base"
+  max_reels_per_day: 1
+
+# Paths
+paths:
+  data_dir: "data"
+  output_dir: "outputs"
+  log_dir: "outputs/logs"
+  models_dir: "models"
