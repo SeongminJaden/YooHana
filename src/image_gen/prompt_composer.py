@@ -173,6 +173,71 @@ class ImagePromptComposer:
     # Negative prompt
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Composite prompt (illustration + real background)
+    # ------------------------------------------------------------------
+
+    def compose_composite_prompt(
+        self,
+        scene: str,
+        clothing: str | None = None,
+        pose: str = "standing naturally",
+        expression: str = "gentle smile",
+        mood: str = "bright",
+    ) -> str:
+        """Build a prompt for compositing the illustrated persona onto a real background.
+
+        Generates a mixed-media style: 2D anime illustration character
+        placed in a photorealistic scene.
+
+        Parameters
+        ----------
+        scene : str
+            Real-world scene description for the background.
+        clothing : str | None
+            Clothing description. Uses persona default if None.
+        pose : str
+            Character pose description.
+        expression : str
+            Facial expression description.
+        mood : str
+            Overall mood/lighting keyword.
+
+        Returns
+        -------
+        str
+            A complete composite-style prompt.
+        """
+        clothing_desc = clothing or "casual chic outfit, minimal accessories"
+
+        parts: list[str] = [
+            f"Mixed-media illustration: a cute 2D anime-style illustrated character "
+            f"of {self._persona.name_en}, a {self._persona.age}-year-old Korean woman "
+            f"with long wavy brown hair and large brown eyes, "
+            f"placed in a photorealistic background scene.",
+            f"Character pose: {pose}.",
+            f"Expression: {expression}.",
+            f"Wearing: {clothing_desc}.",
+            f"Background scene (photorealistic): {scene}.",
+        ]
+
+        mood_map: dict[str, str] = {
+            "bright": "bright and airy lighting, soft shadows",
+            "golden hour": "golden hour warm sunlight, lens flare",
+            "moody": "moody cinematic lighting, rich contrast",
+            "soft pastel": "soft pastel tones, gentle diffused light",
+        }
+        mood_desc = mood_map.get(mood.lower(), mood)
+        parts.append(f"Mood: {mood_desc}.")
+
+        parts.append(
+            "The illustrated character should have clean line art with soft "
+            "cel-shading and cast realistic shadows matching the background. "
+            "Instagram aesthetic, 4:5 portrait composition."
+        )
+
+        return " ".join(parts)
+
     @staticmethod
     def get_negative_prompt() -> str:
         """Return a negative prompt listing visual artefacts to avoid.
