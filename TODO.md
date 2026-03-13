@@ -25,32 +25,29 @@
   - [x] NFD→NFC 유니코드 정규화 처리
   - [x] 발견된 키워드 기반 크롤링 타겟 자동 확장
   - [x] 순환 상태 관리 (cycle_state.json)
+- [x] 순환 파이프라인 통합 테스트 (91샘플, train81/val10)
 
-## 진행중
-- [ ] 순환 파이프라인 통합 테스트 (run_cycle.py full)
-- [ ] 크롤링 데이터 확장 (현재 166 게시글 → 목표 2,000+)
+- [x] 크롤링 데이터 확장 (395 게시글, full 모드)
+- [x] 순환 파이프라인 2차 실행 (377 크롤링 + 15 수동 = 392 샘플, train352/val40)
+- [x] QLoRA 재학습 (Qwen2.5-1.5B, loss 3.8→1.27, 7분)
+- [x] LLM 캡션/해시태그 생성
+  - [x] text_generator.py (base model + LoRA adapter 로드)
+  - [x] prompt_builder.py (페르소나 시스템 프롬프트)
+  - [x] test_generation.py (캡션 4개 + 댓글 답글 3개 생성 테스트)
+  - [x] 생성 파이프라인 동작 확인 (품질은 데이터 양/질 개선 필요)
+- [x] 이미지 분석 + 나노바나나 프롬프트 설계
+  - [x] image_analyzer.py (표정, 옷, 포즈, 배경, 조명, 분위기 분석)
+  - [x] 나노바나나 프롬프트 포맷 설계 (일러스트 캐릭터 + 실사 배경 합성)
+  - [x] prompt_composer.py 확장 (compose_composite_prompt)
+  - [x] 10개 이미지 분석 테스트 완료 (※ API 미보유로 생성 테스트 안함)
+- [x] Instagram 브라우저 포스팅
+  - [x] create_test_image.py (Pillow 1080x1350 테스트 이미지)
+  - [x] browser_poster.py (Playwright 기반 업로드, 세션 재사용)
+  - [x] 실제 테스트 포스팅 성공 ("사진이 게시되었습니다" 확인)
 
-## 남은 작업
-
-### 데이터 & 학습
-- [ ] 수동 학습 데이터 보강 (캡션 300개, 댓글-답글 200개)
-- [ ] Gemini API로 합성 데이터 생성 (~500개)
-- [ ] 확장된 데이터셋으로 모델 재학습
-- [ ] 모델 평가 (perplexity, 샘플 생성, 페르소나 일관성)
-- [ ] 어댑터 병합 (merge_adapter.py)
-
-### 추론 엔진
-- [ ] text_generator.py - 파인튜닝 모델 로드 + 캡션/답글 생성
-- [ ] prompt_builder.py - 페르소나 시스템 프롬프트 구성
-
-### 이미지 생성
-- [ ] Gemini API 연동 (gemini_client.py)
-- [ ] 캐릭터 레퍼런스 이미지 생성 (5-8장)
-- [ ] 이미지 프롬프트 조합 (prompt_composer.py)
-- [ ] 후처리 (1080x1350 피드 / 1080x1920 스토리)
+## 남은 작업 (이후)
 
 ### Instagram 자동화
-- [ ] 사진/스토리 업로드 (poster.py)
 - [ ] 댓글 모니터링 + 자동 답글 (commenter.py)
 - [ ] Graph API 인사이트 (analytics.py)
 - [ ] Anti-ban: 랜덤 딜레이, 시간당 제한, 워밍업
