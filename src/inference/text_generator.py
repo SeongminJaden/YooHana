@@ -1,8 +1,8 @@
 """Fine-tuned model text generation for the AI Influencer project.
 
-Loads a 4-bit quantized model via ``transformers`` + ``bitsandbytes`` and
-exposes convenient methods for caption / reply generation.
-Expected VRAM usage: ~1.6 GB.
+Loads a 4-bit quantized base model + LoRA adapter via ``transformers`` +
+``bitsandbytes`` + ``peft`` and exposes convenient methods for caption /
+reply generation.  Expected VRAM usage: ~1.6 GB.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Optional
 
 import torch
 import yaml
+from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from src.inference.prompt_builder import PromptBuilder
@@ -32,20 +33,14 @@ def _load_settings() -> dict:
 
 
 class TextGenerator:
-    """Singleton text generator backed by a 4-bit quantized causal LM.
+    """Singleton text generator backed by a 4-bit quantized causal LM + LoRA.
 
-    Parameters
-    ----------
-    model_path:
-        Path to the merged (or adapter-merged) model directory.  When
-        *None*, the path is resolved from ``config/settings.yaml``
-        (``model.merged_path``).
+    Loads the base model (Qwen2.5-1.5B-Instruct) in 4-bit and applies
+    the fine-tuned LoRA adapter on top.  Falls back to the adapter path
+    if a merged model directory is not available.
 
-    Notes
-    -----
     The class implements the singleton pattern so that the (expensive)
-    model is loaded at most once per process.  Use ``TextGenerator()``
-    freely – repeated calls return the same instance.
+    model is loaded at most once per process.
     """
 
     _instance: Optional["TextGenerator"] = None
@@ -63,20 +58,11 @@ class TextGenerator:
             return cls._instance
 
     def __init__(self, model_path: Optional[str] = None) -> None:
-        # Guard against re-initialisation on repeated __init__ calls.
         if self._initialised:
             return
 
         self._settings = _load_settings()
         self._project_root = Path(__file__).resolve().parents[2]
-
-        # Resolve model path ------------------------------------------------
-        if model_path is None:
-            model_path = str(
-                self._project_root / self._settings["model"]["merged_path"]
-            )
-        self._model_path = Path(model_path)
-        logger.info("Model path resolved to: {}", self._model_path)
 
         # Quantisation config -----------------------------------------------
         quant_cfg = self._settings["model"]["quantization"]
@@ -89,20 +75,46 @@ class TextGenerator:
             ),
         )
 
-        # Load tokenizer & model ---------------------------------------------
-        logger.info("Loading tokenizer from {} ...", self._model_path)
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            str(self._model_path),
-            trust_remote_code=True,
-        )
+        # Resolve paths ------------------------------------------------------
+        merged_path = self._project_root / self._settings["model"]["merged_path"]
+        adapter_path = self._project_root / self._settings["model"]["adapter_path"]
 
-        logger.info("Loading 4-bit quantized model (~1.6 GB VRAM) ...")
-        self._model = AutoModelForCausalLM.from_pretrained(
-            str(self._model_path),
-            quantization_config=bnb_config,
-            device_map="auto",
-            trust_remote_code=True,
-        )
+        if merged_path.exists() and (merged_path / "config.json").exists():
+            # Merged model available: load directly
+            logger.info("Loading merged model from {} ...", merged_path)
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                str(merged_path), trust_remote_code=True,
+            )
+            self._model = AutoModelForCausalLM.from_pretrained(
+                str(merged_path),
+                quantization_config=bnb_config,
+                device_map="auto",
+                trust_remote_code=True,
+            )
+        elif adapter_path.exists() and (adapter_path / "adapter_config.json").exists():
+            # Load base model + apply LoRA adapter
+            base_model_name = self._settings["model"]["fallback_model"]  # Qwen2.5-1.5B
+            logger.info("Loading base model '{}' + adapter from {} ...",
+                        base_model_name, adapter_path)
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                base_model_name, trust_remote_code=True,
+            )
+            base_model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+                trust_remote_code=True,
+            )
+            self._model = PeftModel.from_pretrained(base_model, str(adapter_path))
+            logger.info("LoRA adapter applied.")
+        else:
+            raise FileNotFoundError(
+                f"Neither merged model ({merged_path}) nor adapter ({adapter_path}) found."
+            )
+
+        if self._tokenizer.pad_token is None:
+            self._tokenizer.pad_token = self._tokenizer.eos_token
+
         self._model.eval()
         logger.success("Model loaded successfully.")
 
@@ -175,77 +187,42 @@ class TextGenerator:
     # ------------------------------------------------------------------
 
     def _render_prompt(self, messages: list[dict[str, str]]) -> str:
-        """Apply the tokenizer chat template to a list of message dicts.
+        """Render messages into the training-time format.
 
-        Falls back to a simple concatenation when the tokenizer has no
-        chat template configured.
+        The model was fine-tuned with ``### Instruction: ... ### Response: ...``
+        format, so we use that for inference rather than chat templates.
         """
-        try:
-            return self._tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        except Exception:
-            # Fallback: plain concatenation for models without a template.
-            parts: list[str] = []
-            for msg in messages:
-                role = msg["role"]
-                content = msg["content"]
-                if role == "system":
-                    parts.append(f"[System]\n{content}\n")
-                elif role == "user":
-                    parts.append(f"[User]\n{content}\n")
-                elif role == "assistant":
-                    parts.append(f"[Assistant]\n{content}\n")
-            parts.append("[Assistant]\n")
-            return "\n".join(parts)
+        # Combine system + user messages into a single instruction block
+        parts: list[str] = []
+        for msg in messages:
+            parts.append(msg["content"])
+        instruction = "\n\n".join(parts)
+
+        return f"### Instruction:\n{instruction}\n\n### Response:\n"
 
     def generate_caption(self, topic: str, context: str = "") -> str:
         """Generate an Instagram caption for the given topic.
 
-        Parameters
-        ----------
-        topic:
-            The caption theme or topic (e.g. "카페 탐방").
-        context:
-            Optional recent-post context to help avoid repetition.
-
-        Returns
-        -------
-        str
-            The generated caption text.
+        Uses training-time instruction format for best quality.
         """
-        messages = self._prompt_builder.build_caption_prompt(
-            topic=topic,
-            context=context,
-        )
-        prompt = self._render_prompt(messages)
+        instruction = f"{topic}에 대한 인스타그램 캡션을 작성해줘"
+        prompt = f"### Instruction:\n{instruction}\n\n### Response:\n"
         logger.debug("Caption prompt length: {} chars", len(prompt))
         return self.generate(prompt, max_new_tokens=self._default_max_new_tokens)
 
-    def generate_reply(self, comment: str, post_caption: str = "") -> str:
-        """Generate a reply to a follower comment.
-
-        Parameters
-        ----------
-        comment:
-            The follower comment to respond to.
-        post_caption:
-            Optional original post caption for context.
-
-        Returns
-        -------
-        str
-            The generated reply text.
-        """
-        messages = self._prompt_builder.build_reply_prompt(
-            comment=comment,
-            post_caption=post_caption,
+    def generate_caption_rich(self, topic: str, context: str = "") -> str:
+        """Generate a caption with full persona context (system + user prompt)."""
+        messages = self._prompt_builder.build_caption_prompt(
+            topic=topic, context=context,
         )
         prompt = self._render_prompt(messages)
+        return self.generate(prompt, max_new_tokens=self._default_max_new_tokens)
+
+    def generate_reply(self, comment: str, post_caption: str = "") -> str:
+        """Generate a reply to a follower comment."""
+        instruction = f"팔로워 댓글 \"{comment}\"에 짧고 친근하게 답글을 써줘"
+        prompt = f"### Instruction:\n{instruction}\n\n### Response:\n"
         logger.debug("Reply prompt length: {} chars", len(prompt))
-        # Replies are short; cap at 128 tokens.
         return self.generate(prompt, max_new_tokens=128)
 
     def generate_plan(
