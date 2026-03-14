@@ -329,4 +329,78 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": f"포스팅 에러: {exc}"}), 500
 
+    # ── API: Sync from Instagram profile ────────────────────────────
+
+    @app.route("/api/sync-instagram", methods=["POST"])
+    def api_sync_instagram():
+        """Fetch posts from the actual Instagram profile and merge into local DB."""
+        try:
+            from src.instagram.browser_poster import BrowserPoster
+
+            poster = BrowserPoster(headless=True)
+            try:
+                if not poster.login():
+                    return jsonify({"error": "Instagram 로그인 실패"}), 500
+
+                ig_posts = poster.get_profile_posts(max_posts=30)
+            finally:
+                poster.close()
+
+            if not ig_posts:
+                return jsonify({"synced": 0, "message": "가져올 게시물이 없습니다"})
+
+            # Merge with existing posts (skip duplicates by shortcode)
+            posts = _load_posts()
+            existing_shortcodes = {
+                p.get("shortcode", "") for p in posts if p.get("shortcode")
+            }
+
+            new_count = 0
+            for ig in ig_posts:
+                sc = ig.get("shortcode", "")
+                if sc and sc in existing_shortcodes:
+                    continue
+
+                # Download image to local uploads
+                img_url = ig.get("image_url", "")
+                filename = ""
+                if img_url:
+                    try:
+                        import urllib.request
+                        ext = ".jpg"
+                        filename = f"ig_{uuid.uuid4().hex[:8]}{ext}"
+                        save_path = _UPLOAD_DIR / filename
+                        urllib.request.urlretrieve(img_url, str(save_path))
+                    except Exception:
+                        filename = ""
+
+                post = {
+                    "id": uuid.uuid4().hex[:12],
+                    "filename": filename,
+                    "image_url": f"/uploads/{filename}" if filename else ig.get("image_url", ""),
+                    "caption": "",
+                    "hashtags": "",
+                    "created_at": datetime.now().isoformat(),
+                    "posted": True,
+                    "posted_at": datetime.now().isoformat(),
+                    "source": "instagram",
+                    "shortcode": sc,
+                    "permalink": ig.get("permalink", ""),
+                }
+                posts.append(post)
+                existing_shortcodes.add(sc)
+                new_count += 1
+
+            if new_count > 0:
+                _save_posts(posts)
+
+            return jsonify({
+                "synced": new_count,
+                "total": len(ig_posts),
+                "message": f"{new_count}개 새 게시물 동기화 완료",
+            })
+
+        except Exception as exc:
+            return jsonify({"error": f"동기화 실패: {exc}"}), 500
+
     return app

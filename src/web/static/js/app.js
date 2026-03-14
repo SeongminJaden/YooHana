@@ -421,7 +421,7 @@
       if (post.posted) {
         const badge = document.createElement("span");
         badge.className = "posted-badge";
-        badge.textContent = "게시됨";
+        badge.textContent = post.source === "bot" ? "자동" : post.source === "instagram" ? "IG" : "게시됨";
         item.appendChild(badge);
       }
 
@@ -439,11 +439,25 @@
     modalDate.textContent = formatDate(post.created_at);
 
     if (post.posted) {
-      modalStatus.textContent = "게시됨";
+      const labels = { bot: "자동 게시됨", instagram: "Instagram 동기화", upload: "게시됨" };
+      modalStatus.textContent = labels[post.source] || "게시됨";
       modalStatus.className = "modal-status posted";
     } else {
       modalStatus.textContent = "임시저장";
       modalStatus.className = "modal-status draft";
+    }
+
+    // Show permalink if available
+    const existingLink = postModal.querySelector(".modal-permalink");
+    if (existingLink) existingLink.remove();
+    if (post.permalink) {
+      const link = document.createElement("a");
+      link.className = "modal-permalink";
+      link.href = post.permalink;
+      link.target = "_blank";
+      link.textContent = "Instagram에서 보기";
+      link.style.cssText = "font-size:13px;color:var(--accent);text-decoration:none;display:block;margin-top:8px;";
+      $(".modal-info").querySelector(".modal-date").after(link);
     }
 
     postModal.classList.remove("hidden");
@@ -480,6 +494,33 @@
       alert("삭제 중 오류가 발생했습니다.");
     }
   });
+
+  // ── Sync Instagram ─────────────────────────────────────
+
+  const syncBtn = $("#syncInstagram");
+  if (syncBtn) {
+    syncBtn.addEventListener("click", async () => {
+      if (!confirm("Instagram에서 게시물을 가져오시겠습니까?\n(브라우저 로그인이 필요합니다)")) return;
+
+      showLoading("Instagram 게시물 동기화 중...");
+      syncBtn.disabled = true;
+
+      try {
+        const data = await apiPost("/api/sync-instagram", {});
+        if (data.error) {
+          alert(`동기화 실패: ${data.error}`);
+        } else {
+          alert(data.message);
+          loadPosts();
+        }
+      } catch (e) {
+        alert("동기화 중 오류가 발생했습니다.");
+      } finally {
+        hideLoading();
+        syncBtn.disabled = false;
+      }
+    });
+  }
 
   // ── Init ───────────────────────────────────────────────
 

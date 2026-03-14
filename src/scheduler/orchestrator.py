@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import random
+import shutil
 import signal
 import traceback
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -477,6 +479,13 @@ class Orchestrator:
                     max_posts,
                     content["topic"],
                 )
+                # Save to posts.json so the web UI shows it
+                self._save_post_record(
+                    image_path=image_path,
+                    caption=caption,
+                    hashtags=hashtags,
+                    topic=content.get("topic", ""),
+                )
             except Exception as exc:
                 logger.error("포스팅 실패: {}", exc)
                 self.task_queue.add_task(
@@ -494,6 +503,64 @@ class Orchestrator:
                 self.poster is not None,
                 image_path,
             )
+
+    def _save_post_record(
+        self,
+        image_path: str,
+        caption: str,
+        hashtags: list[str] | None = None,
+        topic: str = "",
+    ) -> None:
+        """Save a record of the posted content to posts.json for the web UI."""
+        posts_dir = _PROJECT_ROOT / "outputs" / "posts"
+        images_dir = posts_dir / "images"
+        posts_meta = posts_dir / "posts.json"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy image to web uploads directory
+        src = Path(image_path)
+        filename = f"bot_{uuid.uuid4().hex[:8]}{src.suffix}"
+        dst = images_dir / filename
+        shutil.copy2(str(src), str(dst))
+
+        # Build hashtags string
+        tag_str = ""
+        if hashtags:
+            tag_str = " ".join(
+                tag if tag.startswith("#") else f"#{tag}" for tag in hashtags
+            )
+
+        # Strip hashtags from caption if they were appended
+        clean_caption = caption
+        if tag_str and caption.endswith(tag_str):
+            clean_caption = caption[: -len(tag_str)].rstrip("\n ")
+
+        post = {
+            "id": uuid.uuid4().hex[:12],
+            "filename": filename,
+            "image_url": f"/uploads/{filename}",
+            "caption": clean_caption,
+            "hashtags": tag_str,
+            "created_at": datetime.now().isoformat(),
+            "posted": True,
+            "posted_at": datetime.now().isoformat(),
+            "source": "bot",
+            "topic": topic,
+        }
+
+        # Load existing posts and prepend
+        posts: list[dict] = []
+        if posts_meta.exists():
+            try:
+                posts = json.loads(posts_meta.read_text("utf-8"))
+            except (json.JSONDecodeError, OSError):
+                posts = []
+
+        posts.insert(0, post)
+        posts_meta.write_text(
+            json.dumps(posts, ensure_ascii=False, indent=2), "utf-8"
+        )
+        logger.info("게시물 기록 저장: {} ({})", filename, topic)
 
     def run_comment_cycle(self) -> None:
         """Check for unreplied comments, generate replies, and post them."""

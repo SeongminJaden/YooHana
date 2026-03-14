@@ -415,6 +415,83 @@ class BrowserPoster:
             self._screenshot("post_exception")
             return False
 
+    def get_profile_posts(self, username: str = None, max_posts: int = 30) -> list[dict]:
+        """Scrape recent posts from the user's Instagram profile.
+
+        Parameters
+        ----------
+        username : str | None
+            Instagram username. If None, reads from .env.
+        max_posts : int
+            Maximum number of posts to return.
+
+        Returns
+        -------
+        list[dict]
+            Each dict has: image_url, permalink, caption_preview, posted_at
+        """
+        if not self._logged_in:
+            logger.error("Not logged in. Call login() first.")
+            return []
+
+        if not username:
+            from dotenv import load_dotenv
+            load_dotenv(_PROJECT_ROOT / ".env")
+            username = os.getenv("INSTAGRAM_USERNAME", "")
+
+        if not username:
+            logger.error("No username available")
+            return []
+
+        try:
+            self._page.goto(
+                f"https://www.instagram.com/{username}/",
+                wait_until="domcontentloaded",
+            )
+            self._delay(3, 5)
+            self._dismiss_overlays()
+            self._delay(1, 2)
+
+            # Scroll to load more posts
+            for _ in range(min(3, max_posts // 12)):
+                self._page.evaluate("window.scrollBy(0, window.innerHeight)")
+                self._delay(1, 2)
+
+            # Scrape post links and thumbnail images
+            posts = []
+            grid_links = self._page.locator('a[href*="/p/"]')
+            count = min(grid_links.count(), max_posts)
+
+            for i in range(count):
+                try:
+                    link = grid_links.nth(i)
+                    href = link.get_attribute("href") or ""
+                    if "/p/" not in href:
+                        continue
+
+                    # Get the thumbnail image
+                    img = link.locator("img")
+                    img_src = ""
+                    if img.count() > 0:
+                        img_src = img.first.get_attribute("src") or ""
+
+                    post_data = {
+                        "permalink": f"https://www.instagram.com{href}" if href.startswith("/") else href,
+                        "image_url": img_src,
+                        "shortcode": href.strip("/").split("/")[-1] if href else "",
+                    }
+                    posts.append(post_data)
+                except Exception:
+                    continue
+
+            logger.info("프로필에서 {}개 게시물 수집", len(posts))
+            return posts
+
+        except Exception as exc:
+            logger.error("프로필 게시물 수집 실패: {}", exc)
+            self._screenshot("profile_scrape_failed")
+            return []
+
     def close(self) -> None:
         """Close the browser and Playwright."""
         try:
