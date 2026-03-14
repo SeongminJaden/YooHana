@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Influencer — 유하나 관리</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- ═══ LEFT: Instagram Feed ═══ -->
+        <aside class="panel-left">
+            <div class="profile-header">
+                <div class="avatar">하나</div>
+                <div class="profile-info">
+                    <h2>유하나</h2>
+                    <span class="handle">@yoo.hana</span>
+                </div>
+                <div class="profile-stats">
+                    <div class="stat">
+                        <strong id="postCount">0</strong>
+                        <span>게시물</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="feed-label">게시물</div>
+
+            <div class="post-grid" id="postGrid">
+                <div class="empty-state" id="emptyState">
+                    <p>📷</p>
+                    <p>아직 게시물이 없어요</p>
+                    <p class="sub">오른쪽에서 새 게시물을 만들어보세요</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ═══ RIGHT: Chat + Post Settings ═══ -->
+        <main class="panel-right">
+            <!-- Tab bar -->
+            <div class="tab-bar">
+                <button class="tab active" data-tab="chat">💬 대화</button>
+                <button class="tab" data-tab="post">📝 게시물 작성</button>
+            </div>
+
+            <!-- ── Chat Tab ── -->
+            <div class="tab-content active" id="tab-chat">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="msg bot">
+                        <div class="msg-avatar">하나</div>
+                        <div class="msg-bubble">안녕! 나 하나야 ㅎㅎ 뭐 궁금한 거 있으면 편하게 물어봐! ✨</div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="메시지를 입력하세요..."
+                           autocomplete="off">
+                    <button id="chatSend">전송</button>
+                </div>
+            </div>
+
+            <!-- ── Post Tab ── -->
+            <div class="tab-content" id="tab-post">
+                <div class="post-form">
+                    <!-- Image Source Toggle -->
+                    <div class="form-section">
+                        <label class="form-label">이미지</label>
+                        <div class="source-toggle">
+                            <button class="source-btn active" data-source="upload">📁 직접 업로드</button>
+                            <button class="source-btn" data-source="ai">🤖 AI 생성</button>
+                        </div>
+                    </div>
+
+                    <!-- Upload Area -->
+                    <div class="form-section" id="uploadSection">
+                        <div class="upload-area" id="uploadArea">
+                            <input type="file" id="imageFile" accept="image/*">
+                            <div class="upload-placeholder" id="uploadPlaceholder">
+                                <p class="upload-icon">📷</p>
+                                <p>이미지를 드래그하거나 클릭</p>
+                                <p class="sub">JPG, PNG, WebP (최대 16MB)</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Generation Area -->
+                    <div class="form-section hidden" id="aiSection">
+                        <div class="input-row">
+                            <input type="text" id="aiPrompt"
+                                   placeholder="이미지 주제 (예: 성수동 카페에서 라떼)">
+                            <button id="generateImage" class="btn-action">생성</button>
+                        </div>
+                    </div>
+
+                    <!-- Image Preview -->
+                    <div class="form-section hidden" id="previewSection">
+                        <div class="image-preview">
+                            <img id="previewImg" src="" alt="미리보기">
+                            <button class="remove-image" id="removeImage">✕</button>
+                        </div>
+                    </div>
+
+                    <!-- Caption -->
+                    <div class="form-section">
+                        <label class="form-label">캡션</label>
+                        <textarea id="captionText" rows="4"
+                                  placeholder="캡션을 입력하거나 AI가 생성합니다..."></textarea>
+                        <div class="input-row" style="margin-top:8px">
+                            <input type="text" id="captionTopic"
+                                   placeholder="주제 (예: 카페 탐방)">
+                            <button id="generateCaption" class="btn-action">✨ AI 생성</button>
+                        </div>
+                    </div>
+
+                    <!-- Hashtags -->
+                    <div class="form-section">
+                        <label class="form-label">해시태그</label>
+                        <div class="input-row">
+                            <input type="text" id="hashtagText"
+                                   placeholder="#일상 #카페스타그램 ...">
+                            <button id="generateHashtags" class="btn-action">🏷️ 자동</button>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="form-actions">
+                        <button id="savePost" class="btn-secondary">💾 저장</button>
+                        <button id="postInstagram" class="btn-primary">📷 Instagram 게시</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Post Detail Modal -->
+    <div class="modal-overlay hidden" id="postModal">
+        <div class="modal-content">
+            <button class="modal-close" id="modalClose">✕</button>
+            <div class="modal-body">
+                <div class="modal-image">
+                    <img id="modalImg" src="" alt="">
+                </div>
+                <div class="modal-info">
+                    <div class="modal-header">
+                        <div class="avatar small">하나</div>
+                        <strong>유하나</strong>
+                    </div>
+                    <p class="modal-caption" id="modalCaption"></p>
+                    <p class="modal-hashtags" id="modalHashtags"></p>
+                    <p class="modal-date" id="modalDate"></p>
+                    <div class="modal-actions">
+                        <span class="modal-status" id="modalStatus"></span>
+                        <button class="btn-danger btn-small" id="modalDelete">삭제</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p id="loadingText">처리 중...</p>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
