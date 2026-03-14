@@ -8,6 +8,7 @@ powered by APScheduler.
 
 from __future__ import annotations
 
+import json
 import random
 import signal
 import traceback
@@ -74,6 +75,14 @@ class Orchestrator:
         # APScheduler
         self._scheduler: BlockingScheduler | None = None
 
+        # Anti-ban warmup
+        warmup_days = self._settings_cfg.get("instagram", {}).get(
+            "warmup_days", 21
+        )
+        self._warmup_days: int = warmup_days
+        self._first_run_date: str = self._load_first_run_date()
+        self._warmup_ratio: float = self._calculate_warmup_ratio()
+
         # State tracking
         self._running: bool = False
         self._posts_today: int = 0
@@ -81,6 +90,54 @@ class Orchestrator:
 
         # Initialise components
         self._init_components()
+
+    # ------------------------------------------------------------------
+    # Anti-ban warmup
+    # ------------------------------------------------------------------
+
+    def _load_first_run_date(self) -> str:
+        """Load or create the first-run timestamp for warmup tracking."""
+        state_file = _PROJECT_ROOT / "data" / "bot_state.json"
+        if state_file.exists():
+            try:
+                data = json.loads(state_file.read_text(encoding="utf-8"))
+                return data.get("first_run_date", "")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # First time — record today
+        today = datetime.now().strftime("%Y-%m-%d")
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(
+            json.dumps({"first_run_date": today}, indent=2),
+            encoding="utf-8",
+        )
+        return today
+
+    def _calculate_warmup_ratio(self) -> float:
+        """Calculate activity scaling factor (0.0 ~ 1.0) based on warmup.
+
+        Day 1: ~15% activity, linearly scaling to 100% at warmup_days.
+        """
+        if not self._first_run_date or self._warmup_days <= 0:
+            return 1.0
+
+        try:
+            first = datetime.strptime(self._first_run_date, "%Y-%m-%d")
+            elapsed = (datetime.now() - first).days
+        except ValueError:
+            return 1.0
+
+        if elapsed >= self._warmup_days:
+            return 1.0
+
+        # Linear scale: 0.15 at day 0 → 1.0 at warmup_days
+        ratio = 0.15 + 0.85 * (elapsed / self._warmup_days)
+        return min(1.0, max(0.15, ratio))
+
+    def _warmup_limit(self, base_limit: int) -> int:
+        """Apply warmup ratio to a base limit (minimum 1)."""
+        return max(1, int(base_limit * self._warmup_ratio))
 
     # ------------------------------------------------------------------
     # Component initialisation
@@ -318,10 +375,11 @@ class Orchestrator:
             self._posts_today = 0
             self._last_post_date = today_str
 
-        # Check daily limit
-        max_posts = self._schedule_cfg.get("posting", {}).get(
+        # Check daily limit (with warmup scaling)
+        base_max = self._schedule_cfg.get("posting", {}).get(
             "max_posts_per_day", 2
         )
+        max_posts = self._warmup_limit(base_max)
         if self._posts_today >= max_posts:
             logger.info(
                 "일일 포스팅 제한 ({}/{})", self._posts_today, max_posts
@@ -445,9 +503,10 @@ class Orchestrator:
             logger.warning("BrowserCommenter 없음 — 댓글 사이클 건너뜀")
             return
 
-        max_replies = self._schedule_cfg.get("comments", {}).get(
+        base_replies = self._schedule_cfg.get("comments", {}).get(
             "max_replies_per_check", 5
         )
+        max_replies = self._warmup_limit(base_replies)
 
         try:
             replied = self.commenter.auto_reply_recent(
@@ -511,6 +570,12 @@ class Orchestrator:
         logger.info("====== AI Influencer 오케스트레이터 시작 ======")
         logger.info("타임존: {}", self._tz)
         logger.info("지터: ±{}분", self._jitter)
+        logger.info(
+            "워밍업: {:.0f}% (첫 실행: {}, 워밍업 {}일)",
+            self._warmup_ratio * 100,
+            self._first_run_date,
+            self._warmup_days,
+        )
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)

@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Influencer Bot - 자동 인스타그램 관리
+After=network.target
+
+[Service]
+Type=simple
+User=seongmin
+WorkingDirectory=/home/seongmin/git/ai_Influencer
+ExecStart=/usr/bin/python3 scripts/run_bot.py start
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
