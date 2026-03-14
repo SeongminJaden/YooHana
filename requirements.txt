@@ -7,8 +7,8 @@ bitsandbytes>=0.43.0
 # Image generation
 google-genai>=1.0.0
 
-# Instagram
-instagrapi>=2.1.0
+# Instagram (browser automation)
+playwright>=1.40.0
 
 # Scheduling
 apscheduler>=3.10.0
