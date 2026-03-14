@@ -1,24 +1,20 @@
-"""Instagram client module – authentication, posting, comments, and analytics."""
+"""Instagram client module – browser-based posting, comments, and analytics."""
 
 __all__ = [
-    "InstagramAuth",
-    "InstagramPoster",
-    "CommentMonitor",
+    "BrowserPoster",
+    "BrowserCommenter",
     "InstagramAnalytics",
 ]
 
 
 def __getattr__(name):
-    """Lazy import – instagrapi may not be installed in all environments."""
-    if name == "InstagramAuth":
-        from src.instagram.auth import InstagramAuth
-        return InstagramAuth
-    if name == "InstagramPoster":
-        from src.instagram.poster import InstagramPoster
-        return InstagramPoster
-    if name == "CommentMonitor":
-        from src.instagram.commenter import CommentMonitor
-        return CommentMonitor
+    """Lazy import to avoid heavy dependencies at module level."""
+    if name == "BrowserPoster":
+        from src.instagram.browser_poster import BrowserPoster
+        return BrowserPoster
+    if name == "BrowserCommenter":
+        from src.instagram.commenter import BrowserCommenter
+        return BrowserCommenter
     if name == "InstagramAnalytics":
         from src.instagram.analytics import InstagramAnalytics
         return InstagramAnalytics

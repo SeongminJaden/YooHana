@@ -18,13 +18,20 @@ logger = get_logger()
 
 
 def run_once():
-    """Run a single posting cycle (useful for testing)."""
+    """Run a single posting + comment cycle (useful for testing)."""
     from src.scheduler.orchestrator import Orchestrator
 
     orchestrator = Orchestrator()
-    logger.info("Running single posting cycle...")
-    orchestrator.run_posting_cycle()
-    logger.info("Single cycle complete.")
+    try:
+        logger.info("포스팅 사이클 실행...")
+        orchestrator.run_posting_cycle()
+
+        logger.info("댓글 사이클 실행...")
+        orchestrator.run_comment_cycle()
+
+        logger.info("1회 사이클 완료.")
+    finally:
+        orchestrator.stop()
 
 
 def run_comment_check():
@@ -32,9 +39,12 @@ def run_comment_check():
     from src.scheduler.orchestrator import Orchestrator
 
     orchestrator = Orchestrator()
-    logger.info("Running comment check...")
-    orchestrator.run_comment_cycle()
-    logger.info("Comment check complete.")
+    try:
+        logger.info("댓글 체크 실행...")
+        orchestrator.run_comment_cycle()
+        logger.info("댓글 체크 완료.")
+    finally:
+        orchestrator.stop()
 
 
 def run_daemon():
@@ -42,21 +52,11 @@ def run_daemon():
     from src.scheduler.orchestrator import Orchestrator
 
     logger.info("=" * 50)
-    logger.info("AI Influencer Bot Starting")
+    logger.info("AI Influencer 봇 시작")
     logger.info("=" * 50)
 
     orchestrator = Orchestrator()
     orchestrator.start()
-
-
-def run_trend_analysis():
-    """Run a single trend analysis and reel creation cycle."""
-    from src.scheduler.orchestrator import Orchestrator
-
-    orchestrator = Orchestrator()
-    logger.info("Running trend analysis cycle...")
-    orchestrator.run_trend_analysis_cycle()
-    logger.info("Trend analysis cycle complete.")
 
 
 def dry_run():
@@ -120,8 +120,8 @@ def main():
     parser = argparse.ArgumentParser(description="AI Influencer Bot")
     parser.add_argument(
         "mode",
-        choices=["start", "once", "comments", "trends", "dry-run"],
-        help="Run mode: start (daemon), once (single post), comments (check comments), trends (trend analysis), dry-run (test)",
+        choices=["start", "once", "comments", "dry-run"],
+        help="실행 모드: start (데몬), once (1회 사이클), comments (댓글 체크), dry-run (테스트)",
     )
     args = parser.parse_args()
 
@@ -129,7 +129,6 @@ def main():
         "start": run_daemon,
         "once": run_once,
         "comments": run_comment_check,
-        "trends": run_trend_analysis,
         "dry-run": dry_run,
     }
 
