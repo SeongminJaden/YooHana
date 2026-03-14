@@ -60,6 +60,7 @@
   let currentFilename = "";
   let currentSource = "upload";
   let currentModalPostId = "";
+  let chatHistory = []; // {role: "user"|"bot", text: "..."}
 
   // ── Helpers ────────────────────────────────────────────
 
@@ -135,13 +136,18 @@
     chatInput.value = "";
     chatSend.disabled = true;
     appendMessage("user", msg);
+    chatHistory.push({ role: "user", text: msg });
 
     try {
-      const data = await apiPost("/api/chat", { message: msg });
+      const data = await apiPost("/api/chat", {
+        message: msg,
+        history: chatHistory.slice(-10), // last 10 turns (5 pairs)
+      });
       if (data.error) {
         appendMessage("bot", `오류: ${data.error}`);
       } else {
         appendMessage("bot", data.reply);
+        chatHistory.push({ role: "bot", text: data.reply });
       }
     } catch (e) {
       appendMessage("bot", "서버 연결 오류가 발생했어요 😢");

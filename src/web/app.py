@@ -87,9 +87,21 @@ def _is_valid_korean(text: str) -> bool:
     return korean / alpha > 0.5
 
 
-def _generate_chat_response(user_msg: str) -> str:
+def _generate_chat_response(user_msg: str, history: list[dict] | None = None) -> str:
     gen = _get_generator()
-    prompt = f"### Instruction:\n{user_msg}\n\n### Response:\n"
+
+    # Build conversation context from history
+    context = ""
+    if history and len(history) > 1:
+        # Exclude the last user message (it's the current one)
+        prev_turns = history[:-1]
+        lines = []
+        for turn in prev_turns:
+            role = "상대" if turn.get("role") == "user" else "하나"
+            lines.append(f"{role}: {turn.get('text', '')}")
+        context = "[이전 대화]\n" + "\n".join(lines) + "\n\n"
+
+    prompt = f"### Instruction:\n{context}{user_msg}\n\n### Response:\n"
 
     for _ in range(3):
         response = gen.generate(prompt, max_new_tokens=150)
@@ -162,7 +174,8 @@ def create_app() -> Flask:
             return jsonify({"error": "빈 메시지"}), 400
 
         try:
-            reply = _generate_chat_response(user_msg)
+            history = data.get("history") or []
+            reply = _generate_chat_response(user_msg, history)
             return jsonify({"reply": reply})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
