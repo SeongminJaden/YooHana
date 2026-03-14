@@ -44,6 +44,7 @@
             <div class="tab-bar">
                 <button class="tab active" data-tab="chat">💬 대화</button>
                 <button class="tab" data-tab="post">📝 게시물 작성</button>
+                <button class="tab" data-tab="comments">💬 댓글</button>
             </div>
 
             <!-- ── Chat Tab ── -->
@@ -128,6 +129,36 @@
                     <div class="form-actions">
                         <button id="savePost" class="btn-secondary">💾 저장</button>
                         <button id="postInstagram" class="btn-primary">📷 Instagram 게시</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Comments Tab ── -->
+            <div class="tab-content" id="tab-comments">
+                <div class="comments-panel">
+                    <div class="comments-header">
+                        <div class="comments-title">
+                            <span>댓글 관리</span>
+                            <span class="comment-count-badge" id="commentCountBadge">0</span>
+                        </div>
+                        <div class="comments-actions">
+                            <button id="scanComments" class="btn-action btn-small">🔍 스캔</button>
+                            <button id="autoReplyAll" class="btn-action btn-small">🤖 자동 답글</button>
+                        </div>
+                    </div>
+
+                    <div class="comments-filter">
+                        <button class="filter-btn active" data-filter="all">전체</button>
+                        <button class="filter-btn" data-filter="pending">대기</button>
+                        <button class="filter-btn" data-filter="replied">완료</button>
+                    </div>
+
+                    <div class="comment-list" id="commentList">
+                        <div class="empty-state" id="commentEmptyState">
+                            <p>💬</p>
+                            <p>댓글이 없어요</p>
+                            <p class="sub">스캔 버튼을 눌러 Instagram 댓글을 가져오세요</p>
+                        </div>
                     </div>
                 </div>
             </div>

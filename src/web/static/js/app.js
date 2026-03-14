@@ -560,7 +560,209 @@
     });
   }
 
+  // ── Comments Tab ───────────────────────────────────────
+
+  const commentList = $("#commentList");
+  const commentEmptyState = $("#commentEmptyState");
+  const commentCountBadge = $("#commentCountBadge");
+  const scanCommentsBtn = $("#scanComments");
+  const autoReplyAllBtn = $("#autoReplyAll");
+  const filterBtns = $$(".filter-btn");
+
+  let commentsData = [];
+  let currentFilter = "all";
+
+  // Filter buttons
+  filterBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      filterBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentFilter = btn.dataset.filter;
+      renderComments();
+    });
+  });
+
+  async function loadComments() {
+    try {
+      commentsData = await api("/api/comments");
+      renderComments();
+    } catch (e) {
+      console.error("댓글 로드 실패:", e);
+    }
+  }
+
+  function renderComments() {
+    // Clear existing items
+    commentList.querySelectorAll(".comment-item").forEach((el) => el.remove());
+
+    // Filter
+    let filtered = commentsData;
+    if (currentFilter === "pending") {
+      filtered = commentsData.filter((c) => !c.replied);
+    } else if (currentFilter === "replied") {
+      filtered = commentsData.filter((c) => c.replied);
+    }
+
+    const pendingCount = commentsData.filter((c) => !c.replied).length;
+    commentCountBadge.textContent = pendingCount;
+
+    if (filtered.length === 0) {
+      commentEmptyState.classList.remove("hidden");
+      return;
+    }
+    commentEmptyState.classList.add("hidden");
+
+    filtered.forEach((comment) => {
+      const item = document.createElement("div");
+      item.className = "comment-item";
+      item.dataset.commentId = comment.id;
+      item.dataset.status = comment.replied ? "replied" : "pending";
+
+      // Meta row
+      const meta = document.createElement("div");
+      meta.className = "comment-meta";
+
+      const username = document.createElement("strong");
+      username.className = "comment-username";
+      username.textContent = `@${comment.username}`;
+      meta.appendChild(username);
+
+      const badge = document.createElement("span");
+      badge.className = `comment-status-badge ${comment.replied ? "replied" : "pending"}`;
+      badge.textContent = comment.replied ? "완료" : "대기";
+      meta.appendChild(badge);
+
+      if (comment.post_url) {
+        const link = document.createElement("a");
+        link.className = "comment-post-link";
+        link.href = comment.post_url;
+        link.target = "_blank";
+        link.textContent = "게시물";
+        meta.appendChild(link);
+      }
+      item.appendChild(meta);
+
+      // Comment text
+      const text = document.createElement("p");
+      text.className = "comment-text";
+      text.textContent = comment.text;
+      item.appendChild(text);
+
+      // Reply preview (if replied)
+      if (comment.replied && comment.reply_text) {
+        const preview = document.createElement("div");
+        preview.className = "comment-reply-preview";
+        preview.innerHTML = `<span class="reply-label">답글:</span>${escapeHtml(comment.reply_text)}`;
+        item.appendChild(preview);
+      }
+
+      // Reply input area (if not replied)
+      if (!comment.replied) {
+        const replyArea = document.createElement("div");
+        replyArea.className = "comment-reply-area";
+        replyArea.innerHTML =
+          `<input type="text" class="reply-input" placeholder="답글을 입력하세요...">` +
+          `<button class="btn-action btn-small reply-send">전송</button>` +
+          `<button class="btn-action btn-small reply-ai">🤖 AI</button>`;
+        item.appendChild(replyArea);
+      }
+
+      commentList.appendChild(item);
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Event delegation for reply buttons
+  commentList.addEventListener("click", async (e) => {
+    const item = e.target.closest(".comment-item");
+    if (!item) return;
+    const commentId = item.dataset.commentId;
+
+    if (e.target.classList.contains("reply-send")) {
+      const input = item.querySelector(".reply-input");
+      const text = input.value.trim();
+      if (!text) { alert("답글을 입력해주세요."); return; }
+      await replyToComment(commentId, text);
+    }
+
+    if (e.target.classList.contains("reply-ai")) {
+      if (!confirm("AI가 자동으로 답글을 생성하여 게시합니다.")) return;
+      await replyToComment(commentId, "");
+    }
+  });
+
+  async function replyToComment(commentId, replyText) {
+    showLoading(replyText ? "답글 게시 중..." : "AI 답글 생성 중...");
+    try {
+      const data = await apiPost("/api/comments/reply", {
+        comment_id: commentId,
+        reply_text: replyText,
+      });
+      if (data.error) {
+        alert(`답글 실패: ${data.error}`);
+      } else {
+        loadComments();
+      }
+    } catch (e) {
+      alert("답글 중 오류가 발생했습니다.");
+    } finally {
+      hideLoading();
+    }
+  }
+
+  // Scan comments
+  scanCommentsBtn.addEventListener("click", async () => {
+    showLoading("Instagram 댓글 스캔 중...");
+    scanCommentsBtn.disabled = true;
+
+    try {
+      const data = await apiPost("/api/comments/scan", { max_posts: 5 });
+      if (data.error) {
+        alert(`스캔 실패: ${data.error}`);
+      } else {
+        alert(data.message);
+        loadComments();
+      }
+    } catch (e) {
+      alert("스캔 중 오류가 발생했습니다.");
+    } finally {
+      hideLoading();
+      scanCommentsBtn.disabled = false;
+    }
+  });
+
+  // Auto-reply all
+  autoReplyAllBtn.addEventListener("click", async () => {
+    const pending = commentsData.filter((c) => !c.replied).length;
+    if (pending === 0) { alert("답글할 댓글이 없습니다."); return; }
+    if (!confirm(`대기 중인 ${pending}개 댓글에 AI 자동 답글을 달까요?`)) return;
+
+    showLoading("자동 답글 중...");
+    autoReplyAllBtn.disabled = true;
+
+    try {
+      const data = await apiPost("/api/comments/auto-reply", { max_replies: 5 });
+      if (data.error) {
+        alert(`자동 답글 실패: ${data.error}`);
+      } else {
+        alert(data.message);
+        loadComments();
+      }
+    } catch (e) {
+      alert("자동 답글 중 오류가 발생했습니다.");
+    } finally {
+      hideLoading();
+      autoReplyAllBtn.disabled = false;
+    }
+  });
+
   // ── Init ───────────────────────────────────────────────
 
   loadPosts();
+  loadComments();
 })();

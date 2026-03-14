@@ -27,6 +27,10 @@ _UPLOAD_DIR = _POSTS_DIR / "images"
 # Allowed image extensions
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
+# Comment cache
+_COMMENTS_CACHE = _PROJECT_ROOT / "data" / "comments_cache.json"
+_REPLIED_IDS_FILE = _PROJECT_ROOT / "data" / "replied_comment_ids.json"
+
 
 def _load_posts() -> list[dict]:
     if not _POSTS_META.exists():
@@ -42,6 +46,31 @@ def _save_posts(posts: list[dict]) -> None:
     _POSTS_META.write_text(
         json.dumps(posts, ensure_ascii=False, indent=2), "utf-8"
     )
+
+
+def _load_comments_cache() -> list[dict]:
+    if not _COMMENTS_CACHE.exists():
+        return []
+    try:
+        return json.loads(_COMMENTS_CACHE.read_text("utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_comments_cache(comments: list[dict]) -> None:
+    _COMMENTS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _COMMENTS_CACHE.write_text(
+        json.dumps(comments, ensure_ascii=False, indent=2), "utf-8"
+    )
+
+
+def _load_replied_ids() -> set[str]:
+    if not _REPLIED_IDS_FILE.exists():
+        return set()
+    try:
+        return set(json.loads(_REPLIED_IDS_FILE.read_text("utf-8")))
+    except (json.JSONDecodeError, OSError):
+        return set()
 
 
 # ---------------------------------------------------------------------------
@@ -415,5 +444,148 @@ def create_app() -> Flask:
 
         except Exception as exc:
             return jsonify({"error": f"동기화 실패: {exc}"}), 500
+
+    # ── API: Comments ─────────────────────────────────────────────
+
+    @app.route("/api/comments")
+    def api_get_comments():
+        comments = _load_comments_cache()
+        replied_ids = _load_replied_ids()
+        for c in comments:
+            if c["id"] in replied_ids and not c.get("replied"):
+                c["replied"] = True
+        return jsonify(comments)
+
+    @app.route("/api/comments/scan", methods=["POST"])
+    def api_scan_comments():
+        data = request.get_json(force=True)
+        max_posts = int(data.get("max_posts", 5))
+
+        try:
+            gen = _get_generator()
+            from src.instagram.commenter import BrowserCommenter
+
+            commenter = BrowserCommenter(
+                text_generator=gen, headless=True
+            )
+            try:
+                all_comments = []
+                post_urls = commenter.get_recent_post_urls(max_posts=max_posts)
+                for url in post_urls:
+                    comments = commenter.get_comments_for_post(url)
+                    all_comments.extend(comments)
+            finally:
+                commenter.close()
+
+            existing = _load_comments_cache()
+            existing_ids = {c["id"] for c in existing}
+            replied_ids = _load_replied_ids()
+            new_count = 0
+
+            for c in all_comments:
+                if c["id"] not in existing_ids:
+                    c["replied"] = c["id"] in replied_ids
+                    c["reply_text"] = ""
+                    c["replied_at"] = None
+                    c["scanned_at"] = datetime.now().isoformat()
+                    existing.append(c)
+                    existing_ids.add(c["id"])
+                    new_count += 1
+
+            _save_comments_cache(existing)
+            return jsonify({
+                "new": new_count,
+                "total": len(existing),
+                "message": f"새 댓글 {new_count}개 발견",
+            })
+        except Exception as exc:
+            return jsonify({"error": f"스캔 실패: {exc}"}), 500
+
+    @app.route("/api/comments/reply", methods=["POST"])
+    def api_reply_comment():
+        data = request.get_json(force=True)
+        comment_id = data.get("comment_id", "")
+        custom_reply = (data.get("reply_text") or "").strip()
+
+        comments = _load_comments_cache()
+        comment = next((c for c in comments if c["id"] == comment_id), None)
+        if not comment:
+            return jsonify({"error": "댓글을 찾을 수 없습니다"}), 404
+        if comment.get("replied"):
+            return jsonify({"error": "이미 답글을 단 댓글입니다"}), 400
+
+        try:
+            gen = _get_generator()
+
+            if not custom_reply:
+                custom_reply = gen.generate_reply(comment["text"])
+                if not custom_reply:
+                    return jsonify({"error": "답글 생성 실패"}), 500
+
+            from src.instagram.commenter import BrowserCommenter
+
+            commenter = BrowserCommenter(
+                text_generator=gen, headless=True
+            )
+            try:
+                success = commenter.reply_to_comment(comment, custom_reply)
+            finally:
+                commenter.close()
+
+            if success:
+                comment["replied"] = True
+                comment["reply_text"] = custom_reply
+                comment["replied_at"] = datetime.now().isoformat()
+                _save_comments_cache(comments)
+                return jsonify({"ok": True, "reply_text": custom_reply})
+            else:
+                return jsonify({"error": "답글 게시 실패"}), 500
+        except Exception as exc:
+            return jsonify({"error": f"답글 실패: {exc}"}), 500
+
+    @app.route("/api/comments/auto-reply", methods=["POST"])
+    def api_auto_reply_comments():
+        data = request.get_json(force=True)
+        max_replies = int(data.get("max_replies", 5))
+
+        comments = _load_comments_cache()
+        unreplied = [c for c in comments if not c.get("replied")]
+        if not unreplied:
+            return jsonify({"replied": 0, "message": "답글할 댓글이 없습니다"})
+
+        try:
+            gen = _get_generator()
+            from src.instagram.commenter import BrowserCommenter
+
+            commenter = BrowserCommenter(
+                text_generator=gen, headless=True
+            )
+            replied_count = 0
+            try:
+                for comment in unreplied[:max_replies]:
+                    try:
+                        reply_text = gen.generate_reply(comment["text"])
+                        if not reply_text:
+                            continue
+                        success = commenter.reply_to_comment(
+                            comment, reply_text
+                        )
+                        if success:
+                            comment["replied"] = True
+                            comment["reply_text"] = reply_text
+                            comment["replied_at"] = datetime.now().isoformat()
+                            replied_count += 1
+                    except Exception:
+                        continue
+            finally:
+                commenter.close()
+
+            _save_comments_cache(comments)
+            return jsonify({
+                "replied": replied_count,
+                "message": f"{replied_count}개 답글 완료",
+            })
+        except Exception as exc:
+            return jsonify({"error": f"자동 답글 실패: {exc}"}), 500
 
     return app
