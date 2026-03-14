@@ -63,11 +63,11 @@
 - [ ] orchestrator.py 전체 사이클 통합 테스트
 
 ### 배포
-- [ ] systemd 서비스 파일 생성 (ai-influencer.service)
-- [ ] requirements.txt에 apscheduler 추가
+- [x] systemd 서비스 파일 생성 (ai-influencer.service)
+- [x] requirements.txt 정리 (instagrapi → playwright)
 
 ### 개선 사항
-- [ ] Anti-ban 워밍업 로직 (처음 21일 저빈도 운영)
+- [x] Anti-ban 워밍업 로직 (21일 선형 스케일, 첫날 15%)
 - [ ] Graph API 인사이트 연동 (analytics.py)
 - [ ] Gemini API 키 갱신 → 대규모 데이터 증강
 - [ ] 학습 데이터 추가 수집 및 재학습
