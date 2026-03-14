@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Instagram browser crawler - Playwright 기반 크롤링 (페르소나 맞춤 필터링)."""
+"""Instagram browser crawler - Playwright 기반 수집 (페르소나 맞춤 필터링)."""
 from __future__ import annotations
 
 import sys
@@ -57,7 +57,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Instagram Browser Crawler (한국어)")
     parser.add_argument("--mode", choices=["full", "users", "hashtags", "search", "explore", "reels", "test"],
-                       default="test", help="크롤링 모드")
+                       default="test", help="수집 모드")
     parser.add_argument("--count", type=int, default=20, help="소스당 수집할 게시글 수")
     parser.add_argument("--headless", action="store_true", help="헤드리스 모드 (GUI 없음)")
     args = parser.parse_args()
@@ -69,7 +69,7 @@ def main():
             logger.error("로그인 실패! .env 크레덴셜을 확인하세요.")
             sys.exit(1)
 
-        logger.info("로그인 성공! '{}' 모드로 크롤링 시작...", args.mode)
+        logger.info("로그인 성공! '{}' 모드로 수집 시작...", args.mode)
 
         if args.mode == "test":
             # 빠른 테스트: 해시태그 2개, 검색 1개, 소스당 10개
@@ -133,7 +133,7 @@ def main():
 
         # 결과 요약
         print("\n" + "=" * 50)
-        print("크롤링 요약")
+        print("수집 요약")
         print("=" * 50)
         for k, v in stats.items():
             print(f"  {k}: {v}")

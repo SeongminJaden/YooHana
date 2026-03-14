@@ -41,7 +41,7 @@ def main():
     originals = []
 
     if not args.skip_convert:
-        logger.info("=== 1. 크롤링 캡션 → 유하나 말투 변환 ({}) ===", args.captions)
+        logger.info("=== 1. 수집 캡션 → 유하나 말투 변환 ({}) ===", args.captions)
         captions = gen.batch_convert_captions(limit=args.captions)
         logger.info("변환 완료: {}개", len(captions))
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""크롤링 + 미디어 다운로드 + 분석 통합 스크립트."""
+"""수집 + 미디어 다운로드 + 분석 통합 스크립트."""
 from __future__ import annotations
 
 import json
@@ -61,9 +61,9 @@ def analyze_post_media(post: dict) -> dict:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="크롤링 + 미디어 분석")
+    parser = argparse.ArgumentParser(description="수집 + 미디어 분석")
     parser.add_argument("--source", choices=["hashtag", "search", "explore", "user"],
-                       default="hashtag", help="크롤링 소스")
+                       default="hashtag", help="수집 소스")
     parser.add_argument("--target", type=str, default="일상스타그램", help="해시태그/검색어/유저네임")
     parser.add_argument("--count", type=int, default=5, help="수집할 게시글 수")
     args = parser.parse_args()
@@ -75,7 +75,7 @@ def main():
             logger.error("로그인 실패!")
             sys.exit(1)
 
-        logger.info("로그인 성공! 크롤링+분석 시작...")
+        logger.info("로그인 성공! 수집+분석 시작...")
 
         # Crawl
         if args.source == "hashtag":

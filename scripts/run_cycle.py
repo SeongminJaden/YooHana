@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """순환 파이프라인 실행 스크립트.
 
-크롤링 → 학습 데이터 변환 → 키워드 추출 → 재학습 → 재크롤링
+수집 → 학습 데이터 변환 → 키워드 추출 → 재학습 → 재수집
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ logger = get_logger()
 
 
 def cmd_convert(args):
-    """크롤링 데이터 → 학습 JSONL 변환만 실행."""
+    """수집 데이터 → 학습 JSONL 변환만 실행."""
     path, count = convert_crawled_to_training()
     print(f"\n변환 완료: {count} 샘플 → {path}")
 
@@ -56,7 +56,7 @@ def cmd_keywords(args):
     for bg, cnt in result["bigrams"][:10]:
         print(f"  {bg} ({cnt})")
 
-    print("\n[새 크롤링 타겟]")
+    print("\n[새 수집 대상]")
     for target in result["potential_targets"]:
         print(f"  [{target['type']}] {target['value']}")
 
@@ -110,12 +110,12 @@ def cmd_full(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="순환 파이프라인: 크롤링 ↔ 학습 ↔ 재크롤링"
+        description="순환 파이프라인: 수집 ↔ 학습 ↔ 재수집"
     )
     sub = parser.add_subparsers(dest="command", help="실행할 명령")
 
     # convert
-    sub.add_parser("convert", help="크롤링 데이터 → 학습 JSONL 변환")
+    sub.add_parser("convert", help="수집 데이터 → 학습 JSONL 변환")
 
     # keywords
     kw = sub.add_parser("keywords", help="키워드/해시태그 추출")
@@ -129,7 +129,7 @@ def main():
 
     # full (전체 순환)
     full = sub.add_parser("full", help="전체 순환 실행")
-    full.add_argument("--skip-crawl", action="store_true", help="크롤링 건너뜀")
+    full.add_argument("--skip-crawl", action="store_true", help="수집 건너뜀")
     full.add_argument("--skip-train", action="store_true", help="학습 건너뜀")
     full.add_argument("--count", type=int, default=20, help="소스당 수집 게시글 수")
     full.add_argument("--headless", action="store_true", help="헤드리스 모드")

@@ -1,7 +1,7 @@
-"""순환 파이프라인: 크롤링 → 학습 데이터 변환 → 키워드 추출 → 재크롤링.
+"""순환 파이프라인: 수집 → 학습 데이터 변환 → 키워드 추출 → 재수집.
 
-크롤링한 게시글에서 캡션을 학습 JSONL로 변환하고,
-새로운 해시태그/키워드를 자동으로 발견하여 다음 크롤링에 활용한다.
+수집한 게시글에서 캡션을 학습 JSONL로 변환하고,
+새로운 해시태그/키워드를 자동으로 발견하여 다음 수집에 활용한다.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ _CYCLE_STATE_PATH = _PROJECT_ROOT / "data" / "cycle_state.json"
 _PERSONA_PATH = _PROJECT_ROOT / "config" / "persona.yaml"
 
 
-# ── 한국어 불용어 (학습/크롤링에 불필요한 일반 단어) ──────────────
+# ── 한국어 불용어 (학습/수집에 불필요한 일반 단어) ──────────────
 _STOPWORDS = {
     "그리고", "하지만", "그래서", "때문에", "이렇게", "저렇게", "그렇게",
     "너무", "정말", "진짜", "완전", "진심", "댓글", "좋아요", "팔로우",
@@ -68,7 +68,7 @@ def _load_persona_themes() -> list[str]:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 1. 크롤링 데이터 → 학습 JSONL 변환
+# 1. 수집 데이터 → 학습 JSONL 변환
 # ══════════════════════════════════════════════════════════════════
 
 
@@ -110,7 +110,7 @@ def convert_crawled_to_training(
     min_caption_len: int = 10,
     max_caption_len: int = 500,
 ) -> tuple[Path, int]:
-    """크롤링된 raw JSON → instruction-output JSONL 변환.
+    """수집된 raw JSON → instruction-output JSONL 변환.
 
     Returns
     -------
@@ -159,7 +159,7 @@ def convert_crawled_to_training(
             if len(caption) > max_caption_len:
                 continue
 
-            # NFD → NFC 정규화 (macOS/Instagram 크롤링 데이터)
+            # NFD → NFC 정규화 (macOS/Instagram 수집 데이터)
             caption = unicodedata.normalize("NFC", caption)
 
             # 텍스트 정제
@@ -212,7 +212,7 @@ def extract_keywords_from_crawled(
     raw_dir: Path = _RAW_DIR,
     top_n: int = 30,
 ) -> dict[str, Any]:
-    """크롤링 데이터에서 트렌딩 키워드와 해시태그를 추출.
+    """수집 데이터에서 트렌딩 키워드와 해시태그를 추출.
 
     Returns
     -------
@@ -263,7 +263,7 @@ def extract_keywords_from_crawled(
     word_counts = Counter(all_words).most_common(top_n)
     bigram_counts = Counter(all_bigrams).most_common(top_n)
 
-    # 페르소나 테마와 관련된 새로운 크롤링 타겟 생성
+    # 페르소나 테마와 관련된 새로운 수집 대상 생성
     potential_targets = _generate_new_targets(
         hashtag_counts, word_counts, bigram_counts, persona_themes
     )
@@ -291,14 +291,14 @@ def _generate_new_targets(
     bigram_counts: list[tuple[str, int]],
     persona_themes: list[str],
 ) -> list[dict[str, str]]:
-    """추출된 키워드를 기반으로 새 크롤링 타겟 생성.
+    """추출된 키워드를 기반으로 새 수집 대상 생성.
 
     Returns
     -------
     list[dict]
         [{"type": "hashtag"|"search", "value": "..."}, ...]
     """
-    # 기존 크롤링 타겟 (crawl_instagram.py에서 하드코딩된 것)
+    # 기존 수집 대상 (crawl_instagram.py에서 하드코딩된 것)
     existing_hashtags = {
         "일상스타그램", "카페스타그램", "데일리룩", "서울카페",
         "오오티디", "감성스타그램", "맛집스타그램", "봄코디",
@@ -365,7 +365,7 @@ def build_training_dataset(
 
     data/training/ 아래의 모든 JSONL을 읽어 하나의 Dataset으로 합친다.
     페르소나 데이터는 ``persona_upsample`` 배로 업샘플링하여
-    크롤링 데이터 대비 비중을 높인다.
+    수집 데이터 대비 비중을 높인다.
 
     Parameters
     ----------
@@ -383,12 +383,12 @@ def build_training_dataset(
     crawled_datasets = []
     persona_datasets = []
 
-    # ── 크롤링 데이터 (업샘플링 안 함) ──
+    # ── 수집 데이터 (업샘플링 안 함) ──
     crawled_path = _TRAINING_DIR / "crawled_captions.jsonl"
     if crawled_path.exists():
         ds = builder.build_caption_dataset(str(crawled_path), persona_name)
         crawled_datasets.append(ds)
-        logger.info("크롤링 캡션 데이터셋: {} 샘플", len(ds))
+        logger.info("수집 캡션 데이터셋: {} 샘플", len(ds))
 
     # ── 페르소나 데이터 (업샘플링 대상) ──
     persona_files = [
@@ -423,7 +423,7 @@ def build_training_dataset(
     crawled_total = sum(len(d) for d in crawled_datasets)
     persona_total = sum(len(d) for d in persona_datasets) * persona_upsample
     logger.info(
-        "데이터 비율: 크롤링 {} vs 페르소나 {} ({}배 업샘플링)",
+        "데이터 비율: 수집 {} vs 페르소나 {} ({}배 업샘플링)",
         crawled_total, persona_total, persona_upsample,
     )
 
@@ -470,7 +470,7 @@ def update_crawl_targets(
     keyword_result: dict[str, Any],
     state: dict[str, Any],
 ) -> dict[str, Any]:
-    """키워드 추출 결과를 기반으로 크롤링 타겟 업데이트.
+    """키워드 추출 결과를 기반으로 수집 대상 업데이트.
 
     Parameters
     ----------
@@ -500,7 +500,7 @@ def update_crawl_targets(
     state["discovered_searches"] = sorted(existing_s)
 
     logger.info(
-        "크롤링 타겟 업데이트: 해시태그 {}개, 검색어 {}개 (신규: +{}h, +{}s)",
+        "수집 대상 업데이트: 해시태그 {}개, 검색어 {}개 (신규: +{}h, +{}s)",
         len(state["discovered_hashtags"]),
         len(state["discovered_searches"]),
         len(new_hashtags),
@@ -523,7 +523,7 @@ def run_cycle(
 ) -> dict[str, Any]:
     """순환 파이프라인 1회 실행.
 
-    1. 크롤링 (기존 + 발견된 타겟)
+    1. 수집 (기존 + 발견된 타겟)
     2. 학습 데이터 변환
     3. 키워드 추출 → 타겟 업데이트
     4. Dataset 빌드
@@ -532,7 +532,7 @@ def run_cycle(
     Parameters
     ----------
     skip_crawl : bool
-        True면 크롤링 건너뜀 (기존 데이터만 사용)
+        True면 수집 건너뜀 (기존 데이터만 사용)
     skip_train : bool
         True면 모델 학습 건너뜀 (데이터 변환/키워드 추출만)
     crawl_count : int
@@ -556,20 +556,20 @@ def run_cycle(
         "started_at": datetime.now().isoformat(),
     }
 
-    # ── Step 1: 크롤링 ──
+    # ── Step 1: 수집 ──
     if not skip_crawl:
         crawl_stats = _run_crawl(state, crawl_count, headless)
         result["crawl"] = crawl_stats
     else:
-        logger.info("[Step 1] 크롤링 건너뜀 (skip_crawl=True)")
+        logger.info("[Step 1] 수집 건너뜀 (skip_crawl=True)")
 
     # ── Step 2: 학습 데이터 변환 ──
-    logger.info("[Step 2] 크롤링 데이터 → 학습 JSONL 변환")
+    logger.info("[Step 2] 수집 데이터 → 학습 JSONL 변환")
     jsonl_path, total_samples = convert_crawled_to_training()
     result["training_samples"] = total_samples
 
     # ── Step 3: 키워드 추출 & 타겟 업데이트 ──
-    logger.info("[Step 3] 키워드 추출 및 크롤링 타겟 업데이트")
+    logger.info("[Step 3] 키워드 추출 및 수집 대상 업데이트")
     keywords = extract_keywords_from_crawled()
     state = update_crawl_targets(keywords, state)
     result["keywords"] = {
@@ -628,7 +628,7 @@ def _run_crawl(
     count: int,
     headless: bool,
 ) -> dict[str, int]:
-    """기존 + 발견된 타겟으로 크롤링 실행."""
+    """기존 + 발견된 타겟으로 수집 실행."""
     from src.data_pipeline.browser_crawler import InstagramBrowserCrawler
 
     # 기본 타겟
@@ -648,7 +648,7 @@ def _run_crawl(
     all_searches = list(dict.fromkeys(base_searches + discovered_s))
 
     logger.info(
-        "크롤링 타겟: 해시태그 {}개, 검색어 {}개",
+        "수집 대상: 해시태그 {}개, 검색어 {}개",
         len(all_hashtags), len(all_searches),
     )
 

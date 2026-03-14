@@ -2,9 +2,9 @@
 
 ## 완료
 - [x] 프로젝트 구조 생성 (config, src, scripts, data 등)
-- [x] Playwright 기반 Instagram 브라우저 크롤러 구현
+- [x] Playwright 기반 Instagram 브라우저 수집기 구현
   - [x] 로그인/세션 관리
-  - [x] 해시태그/검색/유저/탐색 크롤링
+  - [x] 해시태그/검색/유저/탐색 수집
   - [x] 한국어 DOM 파싱 (좋아요, 시간, 캡션)
   - [x] 페르소나 기반 게시글 필터링
   - [x] "계정 저장하기" 오버레이 자동 닫기
@@ -20,15 +20,15 @@
   - [x] Qwen2.5-1.5B-Instruct 기반 첫 학습 성공 (22샘플, loss 3.4→2.6)
 - [x] 데이터 정제 파이프라인 (cleaner.py, dataset_builder.py)
 - [x] 순환 파이프라인 구현 (cycle_pipeline.py)
-  - [x] 크롤링 데이터 → 학습 JSONL 자동 변환
+  - [x] 수집 데이터 → 학습 JSONL 자동 변환
   - [x] 한국어 키워드/해시태그 자동 추출
   - [x] NFD→NFC 유니코드 정규화 처리
-  - [x] 발견된 키워드 기반 크롤링 타겟 자동 확장
+  - [x] 발견된 키워드 기반 수집 대상 자동 확장
   - [x] 순환 상태 관리 (cycle_state.json)
 - [x] 순환 파이프라인 통합 테스트 (91샘플, train81/val10)
 
-- [x] 크롤링 데이터 확장 (395 게시글, full 모드)
-- [x] 순환 파이프라인 2차 실행 (377 크롤링 + 15 수동 = 392 샘플, train352/val40)
+- [x] 수집 데이터 확장 (395 게시글, full 모드)
+- [x] 순환 파이프라인 2차 실행 (377 수집 + 15 수동 = 392 샘플, train352/val40)
 - [x] QLoRA 재학습 (Qwen2.5-1.5B, loss 3.8→1.27, 7분)
 - [x] LLM 캡션/해시태그 생성
   - [x] text_generator.py (base model + LoRA adapter 로드)
