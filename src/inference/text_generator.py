@@ -7,6 +7,7 @@ reply generation.  Expected VRAM usage: ~1.6 GB.
 
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 from typing import Optional
@@ -179,10 +180,44 @@ class TextGenerator:
 
         # Decode only the newly generated tokens
         generated_ids = outputs[0][inputs["input_ids"].shape[-1] :]
-        return self._tokenizer.decode(
+        text = self._tokenizer.decode(
             generated_ids,
             skip_special_tokens=True,
         ).strip()
+        return self._clean_output(text)
+
+    # Common English terms allowed in Korean Instagram captions
+    _ALLOWED_EN = {
+        "OOTD", "ootd", "GRWM", "grwm", "daily", "cafe", "coffee",
+        "style", "look", "selfie", "vlog", "photo", "mood", "food",
+        "outfit", "brunch", "Seoul", "Kpop", "ENFP", "MBTI",
+        "DM", "SNS", "IT", "OK", "ok", "lol", "OMG",
+    }
+
+    @classmethod
+    def _clean_output(cls, text: str) -> str:
+        """Clean up model output: remove non-Korean script leakage."""
+        # Remove Chinese characters (CJK Unified Ideographs)
+        text = re.sub(r"[\u4e00-\u9fff]+", "", text)
+        # Remove Japanese Hiragana/Katakana
+        text = re.sub(r"[\u3040-\u309f\u30a0-\u30ff]+", "", text)
+        # Remove Cyrillic characters
+        text = re.sub(r"[\u0400-\u04ff]+", "", text)
+        # Remove other non-Korean/non-ASCII stray characters
+        text = re.sub(r"[\u2e80-\u2eff\u3000-\u303f\ufb50-\ufdff]+", "", text)
+        # Remove invisible/formatting unicode
+        text = re.sub(r"[\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufe00-\ufe0f\u2063]+", "", text)
+        # Remove stray English words (3+ chars) not in allowlist
+        def _filter_en(m: re.Match) -> str:
+            return m.group(0) if m.group(0) in cls._ALLOWED_EN else ""
+        text = re.sub(r"\b[A-Za-z]{3,}\b", _filter_en, text)
+        # Remove empty parentheses/brackets left after cleanup
+        text = re.sub(r"\(\s*\)", "", text)
+        text = re.sub(r"\[\s*\]", "", text)
+        # Clean up resulting double spaces or orphaned punctuation
+        text = re.sub(r"  +", " ", text)
+        text = re.sub(r" ([.,!?~])", r"\1", text)
+        return text.strip()
 
     # ------------------------------------------------------------------
     # High-level helpers

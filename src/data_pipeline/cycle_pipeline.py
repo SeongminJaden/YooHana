@@ -359,10 +359,20 @@ def _generate_new_targets(
 
 def build_training_dataset(
     persona_name: str = "유하나",
+    persona_upsample: int = 3,
 ) -> Path:
     """모든 학습 JSONL을 병합하여 HuggingFace Dataset 생성.
 
     data/training/ 아래의 모든 JSONL을 읽어 하나의 Dataset으로 합친다.
+    페르소나 데이터는 ``persona_upsample`` 배로 업샘플링하여
+    크롤링 데이터 대비 비중을 높인다.
+
+    Parameters
+    ----------
+    persona_name : str
+        페르소나 이름
+    persona_upsample : int
+        페르소나 데이터 반복 횟수 (기본 3배)
 
     Returns
     -------
@@ -370,61 +380,52 @@ def build_training_dataset(
         저장된 dataset 경로
     """
     builder = DatasetBuilder()
-    datasets_to_merge = []
+    crawled_datasets = []
+    persona_datasets = []
 
-    # 크롤링 변환 데이터
+    # ── 크롤링 데이터 (업샘플링 안 함) ──
     crawled_path = _TRAINING_DIR / "crawled_captions.jsonl"
     if crawled_path.exists():
         ds = builder.build_caption_dataset(str(crawled_path), persona_name)
-        datasets_to_merge.append(ds)
+        crawled_datasets.append(ds)
         logger.info("크롤링 캡션 데이터셋: {} 샘플", len(ds))
 
-    # 수동 작성 캡션 데이터
-    manual_path = _TRAINING_DIR / "captions.jsonl"
-    if manual_path.exists():
-        ds = builder.build_caption_dataset(str(manual_path), persona_name)
-        datasets_to_merge.append(ds)
-        logger.info("수동 캡션 데이터셋: {} 샘플", len(ds))
+    # ── 페르소나 데이터 (업샘플링 대상) ──
+    persona_files = [
+        ("captions.jsonl", "수동 캡션"),
+        ("persona_dialogues.jsonl", "페르소나 대화"),
+        ("persona_captions_v2.jsonl", "페르소나 캡션 v2"),
+        ("persona_captions_v3.jsonl", "페르소나 캡션 v3"),
+        ("persona_replies.jsonl", "페르소나 답글"),
+        ("persona_replies_v2.jsonl", "페르소나 답글 v2"),
+        ("persona_dialogues_v2.jsonl", "페르소나 대화 v2"),
+        ("persona_dialogues_v3.jsonl", "페르소나 대화 v3"),
+        ("persona_style_data.jsonl", "Gemini 생성 페르소나"),
+    ]
 
-    # 페르소나 대화 데이터
-    persona_path = _TRAINING_DIR / "persona_dialogues.jsonl"
-    if persona_path.exists():
-        ds = builder.build_caption_dataset(str(persona_path), persona_name)
-        datasets_to_merge.append(ds)
-        logger.info("페르소나 대화 데이터셋: {} 샘플", len(ds))
+    for filename, label in persona_files:
+        path = _TRAINING_DIR / filename
+        if path.exists():
+            ds = builder.build_caption_dataset(str(path), persona_name)
+            persona_datasets.append(ds)
+            logger.info("{} 데이터셋: {} 샘플", label, len(ds))
 
-    # 페르소나 스타일 캡션 v2 (여대생 반말 말투)
-    persona_v2_path = _TRAINING_DIR / "persona_captions_v2.jsonl"
-    if persona_v2_path.exists():
-        ds = builder.build_caption_dataset(str(persona_v2_path), persona_name)
-        datasets_to_merge.append(ds)
-        logger.info("페르소나 캡션 v2 데이터셋: {} 샘플", len(ds))
-
-    # 페르소나 댓글 답글 데이터
-    replies_path = _TRAINING_DIR / "persona_replies.jsonl"
-    if replies_path.exists():
-        ds = builder.build_caption_dataset(str(replies_path), persona_name)
-        datasets_to_merge.append(ds)
-        logger.info("페르소나 답글 데이터셋: {} 샘플", len(ds))
-
-    # 페르소나 대화 v2 (확장)
-    dialogues_v2_path = _TRAINING_DIR / "persona_dialogues_v2.jsonl"
-    if dialogues_v2_path.exists():
-        ds = builder.build_caption_dataset(str(dialogues_v2_path), persona_name)
-        datasets_to_merge.append(ds)
-        logger.info("페르소나 대화 v2 데이터셋: {} 샘플", len(ds))
-
-    # Gemini 생성 페르소나 데이터 (있으면)
-    gemini_path = _TRAINING_DIR / "persona_style_data.jsonl"
-    if gemini_path.exists():
-        ds = builder.build_caption_dataset(str(gemini_path), persona_name)
-        datasets_to_merge.append(ds)
-        logger.info("Gemini 생성 페르소나 데이터셋: {} 샘플", len(ds))
-
-    if not datasets_to_merge:
+    if not crawled_datasets and not persona_datasets:
         raise FileNotFoundError(
             f"학습 데이터가 없습니다. {_TRAINING_DIR}에 JSONL 파일을 생성하세요."
         )
+
+    # ── 페르소나 데이터 업샘플링 ──
+    datasets_to_merge = list(crawled_datasets)
+    for _ in range(persona_upsample):
+        datasets_to_merge.extend(persona_datasets)
+
+    crawled_total = sum(len(d) for d in crawled_datasets)
+    persona_total = sum(len(d) for d in persona_datasets) * persona_upsample
+    logger.info(
+        "데이터 비율: 크롤링 {} vs 페르소나 {} ({}배 업샘플링)",
+        crawled_total, persona_total, persona_upsample,
+    )
 
     # 병합 및 분할
     merged = builder.merge_datasets(datasets_to_merge)
