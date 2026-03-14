@@ -50,6 +50,7 @@
   const modalDate = $("#modalDate");
   const modalStatus = $("#modalStatus");
   const modalDelete = $("#modalDelete");
+  const modalPost = $("#modalPost");
 
   // Loading
   const loadingOverlay = $("#loadingOverlay");
@@ -448,9 +449,11 @@
       const labels = { bot: "자동 게시됨", instagram: "Instagram 동기화", upload: "게시됨" };
       modalStatus.textContent = labels[post.source] || "게시됨";
       modalStatus.className = "modal-status posted";
+      modalPost.style.display = "none";
     } else {
       modalStatus.textContent = "임시저장";
       modalStatus.className = "modal-status draft";
+      modalPost.style.display = "";
     }
 
     // Show permalink if available
@@ -483,6 +486,35 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !postModal.classList.contains("hidden")) {
       closeModal();
+    }
+  });
+
+  // ── Post from Modal ─────────────────────────────────────
+
+  modalPost.addEventListener("click", async () => {
+    if (!currentModalPostId) return;
+    if (!confirm("이 게시물을 Instagram에 게시하시겠습니까?")) return;
+
+    showLoading("Instagram에 게시 중...");
+    modalPost.disabled = true;
+
+    try {
+      const data = await apiPost("/api/post-instagram", {
+        post_id: currentModalPostId,
+      });
+
+      if (data.error) {
+        alert(`게시 실패: ${data.error}`);
+      } else {
+        alert("Instagram에 성공적으로 게시되었습니다!");
+        closeModal();
+        loadPosts();
+      }
+    } catch (e) {
+      alert("게시 중 오류가 발생했습니다.");
+    } finally {
+      hideLoading();
+      modalPost.disabled = false;
     }
   });
 
