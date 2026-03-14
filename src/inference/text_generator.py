@@ -16,6 +16,7 @@ import yaml
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+from src.inference.memory import PostMemory
 from src.inference.prompt_builder import PromptBuilder
 from src.persona.character import Persona
 from src.utils.logger import get_logger
@@ -129,6 +130,7 @@ class TextGenerator:
         # Persona & prompt builder -------------------------------------------
         self._persona = Persona()
         self._prompt_builder = PromptBuilder(self._persona)
+        self._memory = PostMemory()
 
         self._initialised = True
 
@@ -200,27 +202,44 @@ class TextGenerator:
 
         return f"### Instruction:\n{instruction}\n\n### Response:\n"
 
-    def generate_caption(self, topic: str, context: str = "") -> str:
-        """Generate an Instagram caption for the given topic.
+    @property
+    def memory(self) -> PostMemory:
+        """Access the post/comment memory system."""
+        return self._memory
 
-        Uses training-time instruction format for best quality.
+    def generate_caption(self, topic: str, context: str = "") -> str:
+        """Generate an Instagram caption with memory context.
+
+        Includes recent post history to avoid repetition.
         """
-        instruction = f"{topic}에 대한 인스타그램 캡션을 작성해줘"
+        # Build memory context
+        memory_ctx = self._memory.build_post_context(max_posts=5)
+        if memory_ctx:
+            instruction = (
+                f"{memory_ctx}\n\n"
+                f"위 게시글과 겹치지 않게, {topic}에 대한 인스타그램 캡션을 작성해줘"
+            )
+        else:
+            instruction = f"{topic}에 대한 인스타그램 캡션을 작성해줘"
+
         prompt = f"### Instruction:\n{instruction}\n\n### Response:\n"
         logger.debug("Caption prompt length: {} chars", len(prompt))
         return self.generate(prompt, max_new_tokens=self._default_max_new_tokens)
 
-    def generate_caption_rich(self, topic: str, context: str = "") -> str:
-        """Generate a caption with full persona context (system + user prompt)."""
-        messages = self._prompt_builder.build_caption_prompt(
-            topic=topic, context=context,
-        )
-        prompt = self._render_prompt(messages)
-        return self.generate(prompt, max_new_tokens=self._default_max_new_tokens)
-
     def generate_reply(self, comment: str, post_caption: str = "") -> str:
-        """Generate a reply to a follower comment."""
-        instruction = f"팔로워 댓글 \"{comment}\"에 짧고 친근하게 답글을 써줘"
+        """Generate a reply with memory of past interactions."""
+        # Include post caption and recent reply context
+        memory_ctx = self._memory.build_comment_context(max_comments=5)
+
+        parts = []
+        if post_caption:
+            parts.append(f"[내 게시글] {post_caption}")
+        if memory_ctx:
+            parts.append(memory_ctx)
+        parts.append(f"[팔로워 댓글] {comment}")
+        parts.append("이 댓글에 답글을 써줘")
+
+        instruction = "\n".join(parts)
         prompt = f"### Instruction:\n{instruction}\n\n### Response:\n"
         logger.debug("Reply prompt length: {} chars", len(prompt))
         return self.generate(prompt, max_new_tokens=128)

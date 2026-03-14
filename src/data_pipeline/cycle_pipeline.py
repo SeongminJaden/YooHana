@@ -393,6 +393,34 @@ def build_training_dataset(
         datasets_to_merge.append(ds)
         logger.info("페르소나 대화 데이터셋: {} 샘플", len(ds))
 
+    # 페르소나 스타일 캡션 v2 (여대생 반말 말투)
+    persona_v2_path = _TRAINING_DIR / "persona_captions_v2.jsonl"
+    if persona_v2_path.exists():
+        ds = builder.build_caption_dataset(str(persona_v2_path), persona_name)
+        datasets_to_merge.append(ds)
+        logger.info("페르소나 캡션 v2 데이터셋: {} 샘플", len(ds))
+
+    # 페르소나 댓글 답글 데이터
+    replies_path = _TRAINING_DIR / "persona_replies.jsonl"
+    if replies_path.exists():
+        ds = builder.build_caption_dataset(str(replies_path), persona_name)
+        datasets_to_merge.append(ds)
+        logger.info("페르소나 답글 데이터셋: {} 샘플", len(ds))
+
+    # 페르소나 대화 v2 (확장)
+    dialogues_v2_path = _TRAINING_DIR / "persona_dialogues_v2.jsonl"
+    if dialogues_v2_path.exists():
+        ds = builder.build_caption_dataset(str(dialogues_v2_path), persona_name)
+        datasets_to_merge.append(ds)
+        logger.info("페르소나 대화 v2 데이터셋: {} 샘플", len(ds))
+
+    # Gemini 생성 페르소나 데이터 (있으면)
+    gemini_path = _TRAINING_DIR / "persona_style_data.jsonl"
+    if gemini_path.exists():
+        ds = builder.build_caption_dataset(str(gemini_path), persona_name)
+        datasets_to_merge.append(ds)
+        logger.info("Gemini 생성 페르소나 데이터셋: {} 샘플", len(ds))
+
     if not datasets_to_merge:
         raise FileNotFoundError(
             f"학습 데이터가 없습니다. {_TRAINING_DIR}에 JSONL 파일을 생성하세요."
