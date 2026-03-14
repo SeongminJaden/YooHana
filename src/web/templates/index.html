@@ -45,6 +45,7 @@
                 <button class="tab active" data-tab="chat">💬 대화</button>
                 <button class="tab" data-tab="post">📝 게시물 작성</button>
                 <button class="tab" data-tab="comments">💬 댓글</button>
+                <button class="tab" data-tab="monitor">📊 학습 모니터</button>
             </div>
 
             <!-- ── Chat Tab ── -->
@@ -158,6 +159,66 @@
                             <p>💬</p>
                             <p>댓글이 없어요</p>
                             <p class="sub">스캔 버튼을 눌러 Instagram 댓글을 가져오세요</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- ── Monitor Tab ── -->
+            <div class="tab-content" id="tab-monitor">
+                <div class="monitor-panel">
+                    <!-- Status Bar -->
+                    <div class="monitor-status-bar">
+                        <div class="monitor-status-indicator" id="monitorStatusDot"></div>
+                        <span id="monitorStatusText">상태 확인 중...</span>
+                        <span class="monitor-cycle-info" id="monitorCycleInfo"></span>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="monitor-stats">
+                        <div class="monitor-stat-card">
+                            <div class="stat-number" id="monStatCycle">0</div>
+                            <div class="stat-label">사이클</div>
+                        </div>
+                        <div class="monitor-stat-card">
+                            <div class="stat-number" id="monStatSamples">0</div>
+                            <div class="stat-label">학습 샘플</div>
+                        </div>
+                        <div class="monitor-stat-card">
+                            <div class="stat-number" id="monStatHashtags">0</div>
+                            <div class="stat-label">해시태그</div>
+                        </div>
+                        <div class="monitor-stat-card">
+                            <div class="stat-number" id="monStatSearches">0</div>
+                            <div class="stat-label">검색어</div>
+                        </div>
+                    </div>
+
+                    <!-- Two-column: Tags + Feed -->
+                    <div class="monitor-body">
+                        <!-- Left: Hashtags & Keywords -->
+                        <div class="monitor-tags-col">
+                            <div class="monitor-section">
+                                <h4 class="monitor-section-title">수집 해시태그</h4>
+                                <div class="tag-cloud" id="monHashtagCloud"></div>
+                            </div>
+                            <div class="monitor-section">
+                                <h4 class="monitor-section-title">수집 검색어</h4>
+                                <div class="tag-cloud" id="monSearchCloud"></div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Live Crawled Posts -->
+                        <div class="monitor-feed-col">
+                            <h4 class="monitor-section-title">
+                                수집된 게시글
+                                <span class="monitor-post-count" id="monPostCount">0</span>
+                            </h4>
+                            <div class="monitor-feed" id="monitorFeed">
+                                <div class="empty-state" id="monitorEmpty">
+                                    <p>📊</p>
+                                    <p>학습 데이터가 수집되면 여기에 표시됩니다</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -588,4 +588,80 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": f"자동 답글 실패: {exc}"}), 500
 
+    # ── API: Training Monitor ───────────────────────────────────
+
+    _CYCLE_STATE_PATH = _PROJECT_ROOT / "data" / "cycle_state.json"
+    _RAW_DIR = _PROJECT_ROOT / "data" / "raw"
+    _TRAINING_JSONL = _PROJECT_ROOT / "data" / "training" / "crawled_captions.jsonl"
+
+    @app.route("/api/monitor/status")
+    def api_monitor_status():
+        # Cycle state
+        state = {}
+        if _CYCLE_STATE_PATH.exists():
+            try:
+                state = json.loads(_CYCLE_STATE_PATH.read_text("utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # Count raw posts
+        raw_files = sorted(_RAW_DIR.glob("*.json")) if _RAW_DIR.exists() else []
+        total_raw = 0
+        for f in raw_files:
+            try:
+                total_raw += len(json.loads(f.read_text("utf-8")))
+            except Exception:
+                pass
+
+        # Training samples count
+        training_samples = 0
+        if _TRAINING_JSONL.exists():
+            try:
+                training_samples = sum(
+                    1 for line in _TRAINING_JSONL.open("r", encoding="utf-8") if line.strip()
+                )
+            except OSError:
+                pass
+
+        return jsonify({
+            "cycle_count": state.get("cycle_count", 0),
+            "total_samples": training_samples,
+            "discovered_hashtags": state.get("discovered_hashtags", []),
+            "discovered_searches": state.get("discovered_searches", []),
+            "history": state.get("history", []),
+            "raw_post_count": total_raw,
+        })
+
+    @app.route("/api/monitor/posts")
+    def api_monitor_posts():
+        limit = request.args.get("limit", 100, type=int)
+        raw_files = sorted(
+            _RAW_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True
+        ) if _RAW_DIR.exists() else []
+
+        posts = []
+        for f in raw_files:
+            try:
+                data = json.loads(f.read_text("utf-8"))
+                source = f.stem
+                for p in data:
+                    caption = p.get("caption", "").strip()
+                    if not caption:
+                        continue
+                    posts.append({
+                        "caption": caption[:200],
+                        "user": p.get("user", ""),
+                        "source": source,
+                        "hashtags": p.get("hashtags", []),
+                        "likes": p.get("likes", 0),
+                        "media_type": p.get("media_type", "photo"),
+                        "timestamp": p.get("timestamp", ""),
+                    })
+            except Exception:
+                continue
+
+        # Sort by timestamp descending, return latest
+        posts.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return jsonify(posts[:limit])
+
     return app

@@ -761,6 +761,156 @@
     }
   });
 
+  // ── Monitor Tab ────────────────────────────────────────
+
+  const monitorFeed = $("#monitorFeed");
+  const monitorEmpty = $("#monitorEmpty");
+  const monStatusDot = $("#monitorStatusDot");
+  const monStatusText = $("#monitorStatusText");
+  const monCycleInfo = $("#monitorCycleInfo");
+  const monHashtagCloud = $("#monHashtagCloud");
+  const monSearchCloud = $("#monSearchCloud");
+  const monPostCount = $("#monPostCount");
+
+  let lastMonitorData = null;
+  let monitorInterval = null;
+
+  async function loadMonitorStatus() {
+    try {
+      const data = await api("/api/monitor/status");
+      lastMonitorData = data;
+
+      // Stats
+      $("#monStatCycle").textContent = data.cycle_count;
+      $("#monStatSamples").textContent = data.total_samples;
+      $("#monStatHashtags").textContent = data.discovered_hashtags.length;
+      $("#monStatSearches").textContent = data.discovered_searches.length;
+
+      // Status indicator
+      const history = data.history || [];
+      const lastCycle = history[history.length - 1];
+      if (lastCycle) {
+        const lastDate = new Date(lastCycle.date);
+        const ago = Math.floor((Date.now() - lastDate.getTime()) / 60000);
+        if (ago < 10) {
+          monStatusDot.className = "monitor-status-indicator running";
+          monStatusText.textContent = "학습 진행 중";
+        } else {
+          monStatusDot.className = "monitor-status-indicator idle";
+          monStatusText.textContent = "대기 중";
+        }
+        monCycleInfo.textContent = `마지막 사이클: ${ago < 60 ? ago + "분 전" : Math.floor(ago/60) + "시간 전"}`;
+      }
+
+      // Hashtag cloud
+      monHashtagCloud.innerHTML = "";
+      const baseHashtags = [
+        "일상스타그램", "카페스타그램", "데일리룩", "서울카페",
+        "오오티디", "감성스타그램", "맛집스타그램", "패션스타그램",
+      ];
+      const allHashtags = [...new Set([...baseHashtags, ...data.discovered_hashtags])];
+      allHashtags.forEach((tag) => {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        chip.textContent = `#${tag}`;
+        monHashtagCloud.appendChild(chip);
+      });
+
+      // Search cloud
+      monSearchCloud.innerHTML = "";
+      const baseSearches = ["일상 브이로그", "서울 카페 추천", "봄 데일리룩"];
+      const allSearches = [...new Set([...baseSearches, ...data.discovered_searches])];
+      allSearches.forEach((s) => {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip search";
+        chip.textContent = s;
+        monSearchCloud.appendChild(chip);
+      });
+    } catch (e) {
+      console.error("모니터 상태 로드 실패:", e);
+    }
+  }
+
+  async function loadMonitorPosts() {
+    try {
+      const posts = await api("/api/monitor/posts?limit=100");
+      monPostCount.textContent = posts.length;
+
+      // Clear existing
+      monitorFeed.querySelectorAll(".monitor-post-item").forEach((el) => el.remove());
+
+      if (posts.length === 0) {
+        monitorEmpty.classList.remove("hidden");
+        return;
+      }
+      monitorEmpty.classList.add("hidden");
+
+      posts.forEach((post) => {
+        const item = document.createElement("div");
+        item.className = "monitor-post-item";
+
+        // Source label: extract readable name from filename
+        let sourceLabel = post.source;
+        const m = sourceLabel.match(/^(hashtag|search|user|explore)_(.+?)_\d/);
+        if (m) sourceLabel = (m[1] === "hashtag" ? "#" : "") + m[2];
+
+        const meta = document.createElement("div");
+        meta.className = "monitor-post-meta";
+        meta.innerHTML =
+          `<span class="monitor-post-user">@${escapeHtml(post.user)}</span>` +
+          `<span class="monitor-post-source">${escapeHtml(sourceLabel)}</span>` +
+          (post.likes ? `<span class="monitor-post-likes">♥ ${post.likes}</span>` : "");
+        item.appendChild(meta);
+
+        const caption = document.createElement("p");
+        caption.className = "monitor-post-caption";
+        caption.textContent = post.caption;
+        item.appendChild(caption);
+
+        if (post.hashtags && post.hashtags.length > 0) {
+          const tags = document.createElement("div");
+          tags.className = "monitor-post-tags";
+          tags.textContent = post.hashtags.map((t) => `#${t}`).join(" ");
+          item.appendChild(tags);
+        }
+
+        monitorFeed.appendChild(item);
+      });
+    } catch (e) {
+      console.error("모니터 게시글 로드 실패:", e);
+    }
+  }
+
+  // Start/stop polling when monitor tab is active
+  function startMonitorPolling() {
+    loadMonitorStatus();
+    loadMonitorPosts();
+    if (!monitorInterval) {
+      monitorInterval = setInterval(() => {
+        loadMonitorStatus();
+        loadMonitorPosts();
+      }, 5000);
+    }
+  }
+
+  function stopMonitorPolling() {
+    if (monitorInterval) {
+      clearInterval(monitorInterval);
+      monitorInterval = null;
+    }
+  }
+
+  // Hook into tab switching
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      if (tab.dataset.tab === "monitor") {
+        startMonitorPolling();
+      } else {
+        stopMonitorPolling();
+      }
+    });
+  });
+
   // ── Init ───────────────────────────────────────────────
 
   loadPosts();
