@@ -191,14 +191,30 @@ def convert_crawled_to_training(
             })
             new_count += 1
 
-    # 저장
+    # 저장 (전체)
     with output_path.open("w", encoding="utf-8") as f:
         for rec in records:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
+    # 플랫폼별 분리 저장
+    ig_records = [r for r in records if not r.get("source", "").startswith("threads:")]
+    th_records = [r for r in records if r.get("source", "").startswith("threads:")]
+
+    ig_path = _TRAINING_DIR / "instagram_captions.jsonl"
+    th_path = _TRAINING_DIR / "threads_captions.jsonl"
+
+    with ig_path.open("w", encoding="utf-8") as f:
+        for rec in ig_records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    with th_path.open("w", encoding="utf-8") as f:
+        for rec in th_records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
     logger.info(
-        "학습 데이터 변환 완료: 신규 {} + 기존 {} = 총 {} 샘플 → {}",
-        new_count, len(records) - new_count, len(records), output_path,
+        "학습 데이터 변환 완료: 신규 {} + 기존 {} = 총 {} 샘플 (IG={}, Threads={}) → {}",
+        new_count, len(records) - new_count, len(records),
+        len(ig_records), len(th_records), output_path,
     )
     return output_path, len(records)
 
@@ -437,6 +453,74 @@ def build_training_dataset(
         len(split["train"]), len(split["validation"]), save_path,
     )
     return save_path
+
+
+def build_platform_datasets(
+    persona_name: str = "유하나",
+    persona_upsample: int = 3,
+) -> dict[str, Path]:
+    """플랫폼별(Instagram/Threads) 학습 데이터셋을 각각 빌드.
+
+    Returns
+    -------
+    dict[str, Path]
+        {"instagram": Path, "threads": Path}
+    """
+    builder = DatasetBuilder()
+    result = {}
+
+    # ── 페르소나 데이터 (양쪽 공통) ──
+    persona_datasets = []
+    persona_files = [
+        ("captions.jsonl", "수동 캡션"),
+        ("persona_dialogues.jsonl", "페르소나 대화"),
+        ("persona_captions_v2.jsonl", "페르소나 캡션 v2"),
+        ("persona_captions_v3.jsonl", "페르소나 캡션 v3"),
+        ("persona_replies.jsonl", "페르소나 답글"),
+        ("persona_replies_v2.jsonl", "페르소나 답글 v2"),
+        ("persona_dialogues_v2.jsonl", "페르소나 대화 v2"),
+        ("persona_dialogues_v3.jsonl", "페르소나 대화 v3"),
+        ("persona_style_data.jsonl", "Gemini 생성 페르소나"),
+    ]
+    for filename, label in persona_files:
+        path = _TRAINING_DIR / filename
+        if path.exists():
+            ds = builder.build_caption_dataset(str(path), persona_name)
+            persona_datasets.append(ds)
+
+    # ── Instagram 데이터셋 ──
+    ig_path = _TRAINING_DIR / "instagram_captions.jsonl"
+    if ig_path.exists():
+        ig_ds = builder.build_caption_dataset(str(ig_path), persona_name)
+        datasets = [ig_ds]
+        for _ in range(persona_upsample):
+            datasets.extend(persona_datasets)
+        merged = builder.merge_datasets(datasets)
+        split = builder.split_train_val(merged, val_ratio=0.1)
+        save_path = builder.save(split, "instagram_dataset")
+        result["instagram"] = save_path
+        logger.info(
+            "Instagram 데이터셋: train {} / val {} → {}",
+            len(split["train"]), len(split["validation"]), save_path,
+        )
+
+    # ── Threads 데이터셋 ──
+    th_path = _TRAINING_DIR / "threads_captions.jsonl"
+    if th_path.exists():
+        th_ds = builder.build_caption_dataset(str(th_path), persona_name)
+        datasets = [th_ds]
+        for _ in range(persona_upsample):
+            datasets.extend(persona_datasets)
+        merged = builder.merge_datasets(datasets)
+        split = builder.split_train_val(merged, val_ratio=0.1)
+        save_path = builder.save(split, "threads_dataset")
+        result["threads"] = save_path
+        logger.info(
+            "Threads 데이터셋: train {} / val {} → {}",
+            len(split["train"]), len(split["validation"]), save_path,
+        )
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -10,6 +10,8 @@ model:
   base_model: "kakaocorp/kanana-nano-2.1b-instruct"
   fallback_model: "Qwen/Qwen2.5-1.5B-Instruct"
   adapter_path: "models/adapter"
+  adapter_instagram: "models/adapter_instagram"
+  adapter_threads: "models/adapter_threads"
   merged_path: "models/merged"
   max_seq_length: 512
   quantization:

@@ -387,9 +387,136 @@ class InstagramBrowserCrawler:
     # Data extraction from post/reel detail page
     # ------------------------------------------------------------------
 
+    def _extract_post_via_embed(self, post_url: str) -> dict[str, Any] | None:
+        """Extract post data via Instagram embed page (works in headless)."""
+        # Convert /p/XXXX/ or /reel/XXXX/ to embed URL
+        match = re.search(r"(/p/[^/]+/|/reel/[^/]+/)", post_url)
+        if not match:
+            return None
+
+        embed_url = f"https://www.instagram.com{match.group(1)}embed/"
+        try:
+            self._page.goto(embed_url, wait_until="domcontentloaded")
+            time.sleep(2)
+
+            html = self._page.content()
+            if len(html) < 200:
+                return None
+
+            data: dict[str, Any] = {
+                "url": post_url,
+                "media_id": "",
+                "media_type": "reel" if "/reel/" in post_url else "photo",
+                "caption": "",
+                "likes": 0,
+                "comments_count": 0,
+                "views": 0,
+                "user": "",
+                "timestamp": datetime.now().isoformat(),
+                "post_time_text": "",
+                "hashtags": [],
+                "comments": [],
+                "audio": "",
+                "image_urls": [],
+                "image_descriptions": [],
+                "video_url": "",
+                "carousel_count": 1,
+            }
+
+            mid = re.search(r"/p/([^/]+)/|/reel/([^/]+)/", post_url)
+            if mid:
+                data["media_id"] = mid.group(1) or mid.group(2)
+
+            # Username from embed
+            try:
+                user_el = self._page.locator("a.e1e1d span, .UsernameText, a[href*='instagram.com/'] span")
+                if user_el.count() > 0:
+                    data["user"] = user_el.first.text_content(timeout=2000).strip().replace("@", "")
+            except Exception:
+                pass
+
+            # Try simpler selectors for username
+            if not data["user"]:
+                try:
+                    # Embed pages have a header with username link
+                    header_links = self._page.locator("header a")
+                    for i in range(header_links.count()):
+                        href = header_links.nth(i).get_attribute("href", timeout=1000) or ""
+                        text = header_links.nth(i).text_content(timeout=1000).strip()
+                        if "instagram.com/" in href and text and len(text) < 30:
+                            data["user"] = text.replace("@", "")
+                            break
+                except Exception:
+                    pass
+
+            # Caption from embed page
+            try:
+                # Embed pages wrap caption in a div with class containing "Caption"
+                caption_el = self._page.locator(
+                    'div[class*="Caption"] span, '
+                    'div[class*="caption"] span, '
+                    '.Caption span'
+                )
+                candidates = []
+                for i in range(min(caption_el.count(), 10)):
+                    text = caption_el.nth(i).text_content(timeout=1000).strip()
+                    if len(text) > 5:
+                        candidates.append(text)
+                if candidates:
+                    data["caption"] = max(candidates, key=len)
+            except Exception:
+                pass
+
+            # Fallback: any long text span in embed
+            if not data["caption"]:
+                try:
+                    spans = self._page.locator("span")
+                    candidates = []
+                    for i in range(min(spans.count(), 40)):
+                        text = spans.nth(i).text_content(timeout=500).strip()
+                        if (len(text) > 20
+                            and not re.match(r"^@?\w[\w.]+$", text)
+                            and "View" not in text
+                            and "로그인" not in text):
+                            candidates.append(text)
+                    if candidates:
+                        data["caption"] = max(candidates, key=len)
+                except Exception:
+                    pass
+
+            # Extract hashtags from caption
+            if data["caption"]:
+                data["hashtags"] = re.findall(r"#(\w+)", data["caption"])
+
+            # Image URLs from embed
+            try:
+                imgs = self._page.locator("img")
+                for i in range(min(imgs.count(), 10)):
+                    src = imgs.nth(i).get_attribute("src", timeout=500) or ""
+                    if "scontent" in src or "instagram" in src:
+                        data["image_urls"].append(src)
+            except Exception:
+                pass
+
+            if data["caption"]:
+                logger.debug("  Embed caption ({}ch): {}", len(data["caption"]), data["caption"][:60])
+                return data
+
+            return None
+        except Exception as exc:
+            logger.debug("  Embed extraction failed: {}", exc)
+            return None
+
     def _extract_post_data(self, url: str = None) -> dict[str, Any]:
         """Extract data from a post/reel detail page (already navigated to)."""
         self._dismiss_overlays()
+
+        # Wait for content to settle
+        try:
+            self._page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception:
+            pass
+
         data = {
             "url": url or self._page.url,
             "media_id": "",
@@ -422,6 +549,20 @@ class InstagramBrowserCrawler:
             if "/reel/" in page_url:
                 data["media_type"] = "reel"
 
+            # Try expanding "더 보기" (see more) for full caption
+            try:
+                more_btn = self._page.locator(
+                    'button:has-text("더 보기"), '
+                    'span:has-text("더 보기"), '
+                    'button:has-text("more"), '
+                    'div[role="button"]:has-text("더 보기")'
+                )
+                if more_btn.count() > 0:
+                    more_btn.first.click(timeout=2000)
+                    time.sleep(0.5)
+            except Exception:
+                pass
+
             # Username: find the first a[role="link"] that links to a user profile
             try:
                 user_links = self._page.locator('a[role="link"]')
@@ -440,30 +581,30 @@ class InstagramBrowserCrawler:
             except Exception:
                 pass
 
-            # Caption: from h1 tags (Instagram uses h1 for caption text)
+            # ── Caption extraction (multiple strategies) ──
+
+            # Strategy 1: h1 tags (Instagram uses h1 for caption text)
             try:
                 h1s = self._page.locator("h1")
                 for i in range(h1s.count()):
                     text = h1s.nth(i).text_content(timeout=2000) or ""
                     text = text.strip()
-                    # Skip navigation h1s and username-only text
                     skip_h1 = {"게시물", "릴스", "Post", "Reel"}
                     if (text and text not in skip_h1 and len(text) > 3
-                        and not re.match(r"^@?\w[\w.]+$", text)):  # skip bare usernames
+                        and not re.match(r"^@?\w[\w.]+$", text)):
                         data["caption"] = text
                         break
             except Exception:
                 pass
 
-            # If h1 didn't work, try span[dir="auto"]
+            # Strategy 2: span[dir="auto"] (common Instagram pattern)
             if not data["caption"]:
                 try:
                     spans = self._page.locator('span[dir="auto"]')
                     candidates = []
-                    for i in range(min(spans.count(), 20)):
+                    for i in range(min(spans.count(), 30)):
                         text = spans.nth(i).text_content(timeout=1000) or ""
                         text = text.strip()
-                        # Skip: short, username-only, navigation, time indicators
                         if (len(text) > 10
                             and not re.match(r"^@?\w[\w.]+$", text)
                             and not re.match(r"^\d+[시일분초주개월년]", text)
@@ -471,11 +612,71 @@ class InstagramBrowserCrawler:
                             candidates.append(text)
 
                     if candidates:
-                        # Pick the longest text (most likely the full caption)
                         best = max(candidates, key=len)
                         data["caption"] = best.replace("... 더 보기", "").replace("더 보기", "").strip()
                 except Exception:
                     pass
+
+            # Strategy 3: meta og:description (reliable fallback)
+            if not data["caption"]:
+                try:
+                    meta = self._page.locator('meta[property="og:description"]')
+                    if meta.count() > 0:
+                        desc = meta.first.get_attribute("content", timeout=2000) or ""
+                        # Format: "N Likes, N Comments - @user on Instagram: "caption""
+                        caption_match = re.search(
+                            r'(?:Instagram|인스타그램)[:\s]*["\u201c](.+?)["\u201d]',
+                            desc,
+                        )
+                        if caption_match:
+                            data["caption"] = caption_match.group(1).strip()
+                        elif ":" in desc:
+                            # Try after the last colon
+                            parts = desc.split(":")
+                            candidate = parts[-1].strip().strip('"').strip('\u201c\u201d').strip()
+                            if len(candidate) > 10:
+                                data["caption"] = candidate
+                except Exception:
+                    pass
+
+            # Strategy 4: meta description (another fallback)
+            if not data["caption"]:
+                try:
+                    meta = self._page.locator('meta[name="description"]')
+                    if meta.count() > 0:
+                        desc = meta.first.get_attribute("content", timeout=2000) or ""
+                        caption_match = re.search(
+                            r'(?:Instagram|인스타그램)[:\s]*["\u201c](.+?)["\u201d]',
+                            desc,
+                        )
+                        if caption_match:
+                            data["caption"] = caption_match.group(1).strip()
+                except Exception:
+                    pass
+
+            # Strategy 5: article or div with long text content
+            if not data["caption"]:
+                try:
+                    articles = self._page.locator("article")
+                    if articles.count() > 0:
+                        spans = articles.first.locator("span")
+                        candidates = []
+                        for i in range(min(spans.count(), 40)):
+                            text = spans.nth(i).text_content(timeout=500) or ""
+                            text = text.strip()
+                            if (len(text) > 15
+                                and not re.match(r"^@?\w[\w.]+$", text)
+                                and not re.match(r"^\d+", text)
+                                and text not in ("댓글 달기", "좋아요", "공유하기", "저장", "팔로우", "팔로잉")):
+                                candidates.append(text)
+                        if candidates:
+                            data["caption"] = max(candidates, key=len)
+                except Exception:
+                    pass
+
+            if data["caption"]:
+                logger.debug("  Caption found ({}ch): {}",
+                             len(data["caption"]), data["caption"][:60])
 
             # Likes/Views: parse from section text content
             try:
@@ -717,6 +918,11 @@ class InstagramBrowserCrawler:
                     if href and ("/p/" in href or "/reel/" in href):
                         if not href.startswith("http"):
                             href = f"https://www.instagram.com{href}"
+                        # Remove query params (?q=...) that cause HTTP errors
+                        href = href.split("?")[0]
+                        # Ensure trailing slash
+                        if not href.endswith("/"):
+                            href += "/"
                         links.add(href)
                 except Exception:
                     continue
@@ -811,32 +1017,383 @@ class InstagramBrowserCrawler:
         logger.info("Collected {} reels from @{}", len(results), username)
         return results
 
+    def crawl_hashtag_intercept(self, hashtag: str, max_posts: int = 30) -> list[dict]:
+        """Crawl posts from a hashtag page by intercepting API responses.
+
+        Instead of clicking individual posts (which triggers rate limits),
+        this method captures Instagram's internal API/GraphQL responses
+        that contain full post data including captions.
+        """
+        tag = hashtag.lstrip("#")
+        logger.info("=== Crawling #{} via intercept (max {} posts) ===", tag, max_posts)
+
+        captured_posts: list[dict] = []
+
+        def _handle_response(response):
+            """Capture Instagram API responses containing post data."""
+            url = response.url
+            # Instagram internal API endpoints that return post data
+            api_patterns = [
+                "/api/v1/tags/",
+                "/api/v1/feed/tag/",
+                "graphql/query",
+                "/api/v1/media/",
+                "/api/v1/feed/",
+            ]
+            if not any(p in url for p in api_patterns):
+                return
+            if response.status != 200:
+                return
+
+            try:
+                body = response.json()
+            except Exception:
+                return
+
+            # Extract posts from various API response formats
+            posts = self._parse_api_response(body, tag)
+            if posts:
+                captured_posts.extend(posts)
+                logger.debug("  Intercepted {} posts from API (total: {})",
+                             len(posts), len(captured_posts))
+
+        # Set up response listener
+        self._page.on("response", _handle_response)
+
+        try:
+            # Navigate to hashtag page (triggers API calls)
+            self.go_to_hashtag(tag)
+            self._delay(3, 5)
+
+            # Scroll to trigger more API calls
+            scroll_rounds = max(2, max_posts // 9)
+            for s in range(scroll_rounds):
+                if len(captured_posts) >= max_posts:
+                    break
+                self._scroll_down(times=2)
+                self._delay(2, 4)
+                if (s + 1) % 3 == 0:
+                    logger.info("  #{} scrolling... {} posts captured",
+                                tag, len(captured_posts))
+        finally:
+            # Remove listener
+            self._page.remove_listener("response", _handle_response)
+
+        # Deduplicate by media_id
+        seen_ids = set()
+        results = []
+        for p in captured_posts:
+            mid = p.get("media_id", "")
+            if mid and mid in seen_ids:
+                continue
+            if mid:
+                seen_ids.add(mid)
+            if p.get("caption") and self._is_relevant(p):
+                p["source"] = f"#{tag}"
+                results.append(p)
+
+        results = results[:max_posts]
+        self._all_collected.extend(results)
+        if results:
+            self._save_json(results, f"hashtag_{tag}_{self._timestamp()}.json")
+        logger.info("Collected {} posts from #{} (intercepted)", len(results), tag)
+        return results
+
+    def _parse_api_response(self, body: dict, source: str = "") -> list[dict]:
+        """Parse Instagram API/GraphQL response to extract post data."""
+        posts = []
+
+        # Strategy 1: GraphQL hashtag response
+        # data.hashtag.edge_hashtag_to_media.edges[].node
+        try:
+            edges = (body.get("data", {})
+                     .get("hashtag", {})
+                     .get("edge_hashtag_to_media", {})
+                     .get("edges", []))
+            for edge in edges:
+                node = edge.get("node", {})
+                post = self._parse_graphql_node(node)
+                if post:
+                    posts.append(post)
+            if posts:
+                return posts
+        except Exception:
+            pass
+
+        # Strategy 2: v1 API tag feed
+        # sections[].layout_content.medias[].media
+        try:
+            sections = body.get("sections", [])
+            for section in sections:
+                medias = (section.get("layout_content", {})
+                          .get("medias", []))
+                for media_wrap in medias:
+                    media = media_wrap.get("media", {})
+                    post = self._parse_v1_media(media)
+                    if post:
+                        posts.append(post)
+            if posts:
+                return posts
+        except Exception:
+            pass
+
+        # Strategy 3: ranked_items or items array
+        for key in ("ranked_items", "items", "media"):
+            try:
+                items = body.get(key, [])
+                if isinstance(items, list):
+                    for item in items:
+                        post = self._parse_v1_media(item)
+                        if post:
+                            posts.append(post)
+                if posts:
+                    return posts
+            except Exception:
+                pass
+
+        # Strategy 4: xdt_fbsearch / xdt_api (newer Instagram GraphQL format)
+        # edges[].node.__typename == "XDTTopSerpMediaGridUnit"
+        # edges[].node.items[] contains media dicts
+        try:
+            data = body.get("data", {})
+            for key, value in data.items():
+                if not isinstance(value, dict):
+                    continue
+                edges = value.get("edges", [])
+                for edge in edges:
+                    node = edge.get("node", {})
+                    # XDTTopSerpMediaGridUnit has items[]
+                    items = node.get("items", [])
+                    if items:
+                        for item in items:
+                            post = self._parse_v1_media(item)
+                            if post:
+                                posts.append(post)
+                    else:
+                        # Node itself might be a media
+                        post = self._parse_v1_media(node)
+                        if post:
+                            posts.append(post)
+
+                # Also check sections/items directly on value
+                sections = value.get("sections", [])
+                for section in sections:
+                    medias = (section.get("layout_content", {})
+                              .get("medias", []))
+                    for media_wrap in medias:
+                        media = media_wrap.get("media", {})
+                        post = self._parse_v1_media(media)
+                        if post:
+                            posts.append(post)
+                items_direct = value.get("items", [])
+                if isinstance(items_direct, list):
+                    for item in items_direct:
+                        post = self._parse_v1_media(item)
+                        if post:
+                            posts.append(post)
+
+            if posts:
+                return posts
+        except Exception:
+            pass
+
+        return posts
+
+    def _parse_graphql_node(self, node: dict) -> dict | None:
+        """Parse a GraphQL media node into post data."""
+        if not node:
+            return None
+
+        caption_text = ""
+        edges = node.get("edge_media_to_caption", {}).get("edges", [])
+        if edges:
+            caption_text = edges[0].get("node", {}).get("text", "")
+
+        if not caption_text:
+            return None
+
+        return {
+            "url": f"https://www.instagram.com/p/{node.get('shortcode', '')}/",
+            "media_id": node.get("shortcode", node.get("id", "")),
+            "media_type": "video" if node.get("is_video") else "photo",
+            "caption": caption_text,
+            "likes": node.get("edge_liked_by", {}).get("count", 0)
+                     or node.get("edge_media_preview_like", {}).get("count", 0),
+            "comments_count": node.get("edge_media_to_comment", {}).get("count", 0),
+            "user": node.get("owner", {}).get("username", ""),
+            "hashtags": re.findall(r"#(\w+)", caption_text),
+            "timestamp": datetime.now().isoformat(),
+            "image_urls": [node.get("display_url", "")],
+            "carousel_count": node.get("edge_sidecar_to_children", {}).get("edges", [{}]).__len__() or 1,
+            "views": node.get("video_view_count", 0),
+            "comments": [],
+            "audio": "",
+            "image_descriptions": [],
+            "video_url": "",
+            "post_time_text": "",
+        }
+
+    def _parse_v1_media(self, media: dict) -> dict | None:
+        """Parse a v1 API media object into post data."""
+        if not media or not isinstance(media, dict):
+            return None
+
+        # Caption extraction
+        caption_obj = media.get("caption")
+        caption_text = ""
+        if isinstance(caption_obj, dict):
+            caption_text = caption_obj.get("text", "")
+        elif isinstance(caption_obj, str):
+            caption_text = caption_obj
+
+        if not caption_text:
+            return None
+
+        # Username
+        user = media.get("user", {})
+        username = ""
+        if isinstance(user, dict):
+            username = user.get("username", "")
+
+        # Media type
+        media_type = "photo"
+        if media.get("media_type") == 2 or media.get("video_versions"):
+            media_type = "video"
+        elif media.get("carousel_media"):
+            media_type = "carousel"
+
+        # Code/shortcode
+        code = media.get("code", media.get("shortcode", media.get("pk", "")))
+
+        # Likes
+        likes = media.get("like_count", 0)
+
+        # Image URL
+        image_url = ""
+        candidates = media.get("image_versions2", {}).get("candidates", [])
+        if candidates:
+            image_url = candidates[0].get("url", "")
+
+        return {
+            "url": f"https://www.instagram.com/p/{code}/" if code else "",
+            "media_id": str(code),
+            "media_type": media_type,
+            "caption": caption_text,
+            "likes": likes,
+            "comments_count": media.get("comment_count", 0),
+            "user": username,
+            "hashtags": re.findall(r"#(\w+)", caption_text),
+            "timestamp": datetime.now().isoformat(),
+            "image_urls": [image_url] if image_url else [],
+            "carousel_count": len(media.get("carousel_media", [])) or 1,
+            "views": media.get("play_count", media.get("view_count", 0)),
+            "comments": [],
+            "audio": "",
+            "image_descriptions": [],
+            "video_url": "",
+            "post_time_text": "",
+        }
+
     def crawl_hashtag(self, hashtag: str, max_posts: int = 30) -> list[dict]:
-        """Crawl posts from a hashtag page."""
+        """Crawl posts from a hashtag page by clicking grid items."""
         tag = hashtag.lstrip("#")
         logger.info("=== Crawling #{} (max {} posts) ===", tag, max_posts)
 
         if not self.go_to_hashtag(tag):
             return []
 
-        links = self._collect_grid_links(max_posts)
         results = []
+        skipped_no_caption = 0
+        consecutive_fails = 0
+        visited_urls = set()
 
-        for link in links:
+        error_phrases = [
+            "링크가 잘못되었거나", "페이지가 삭제", "Page Not Found",
+            "문제가 발생하여", "읽어들이지 못했습니다",
+            "댓글", "모두 보기", "좋아요", "게시물", "팔로워",
+            "로그인", "가입하기", "Something went wrong",
+        ]
+
+        # Scroll to load enough grid items
+        self._scroll_down(times=max(1, max_posts // 6))
+        self._delay(1, 2)
+
+        # Collect grid links for reference
+        grid_links = self._page.locator('a[href*="/p/"], a[href*="/reel/"]')
+        total_items = grid_links.count()
+        logger.info("  Found {} grid items for #{}", total_items, tag)
+
+        for i in range(min(total_items, max_posts)):
             try:
-                self._page.goto(link, wait_until="domcontentloaded")
-                self._delay(2, 4)
-                post_data = self._extract_post_data(link)
+                # Re-locate grid links (DOM may change after navigation)
+                grid_links = self._page.locator('a[href*="/p/"], a[href*="/reel/"]')
+                if i >= grid_links.count():
+                    break
+
+                href = grid_links.nth(i).get_attribute("href", timeout=2000) or ""
+                clean_url = href.split("?")[0]
+                if clean_url in visited_urls:
+                    continue
+                visited_urls.add(clean_url)
+
+                # Click the grid item to navigate to the post
+                grid_links.nth(i).click(timeout=5000)
+                self._delay(3, 5)
+
+                post_data = self._extract_post_data()
                 post_data["source"] = f"#{tag}"
-                if post_data["caption"] and self._is_relevant(post_data):
+
+                caption = post_data.get("caption", "")
+                is_error = not caption or any(ep in caption for ep in error_phrases)
+
+                if is_error:
+                    # Try embed fallback
+                    full_url = f"https://www.instagram.com{clean_url}" if not clean_url.startswith("http") else clean_url
+                    embed_data = self._extract_post_via_embed(full_url)
+                    if embed_data:
+                        embed_data["source"] = f"#{tag}"
+                        post_data = embed_data
+                        caption = post_data.get("caption", "")
+                        is_error = not caption or any(ep in caption for ep in error_phrases)
+
+                if is_error:
+                    skipped_no_caption += 1
+                    consecutive_fails += 1
+                    if consecutive_fails >= 3:
+                        logger.warning("  #{}: {} consecutive fails — rate limited, skipping",
+                                       tag, consecutive_fails)
+                        break
+                elif not self._is_relevant(post_data):
+                    consecutive_fails = 0
+                else:
+                    consecutive_fails = 0
                     results.append(post_data)
+                    logger.debug("  [{}/{}] @{}: {}",
+                                 i + 1, min(total_items, max_posts),
+                                 post_data.get("user", "?"),
+                                 caption[:50])
+
+                # Go back to hashtag grid
+                self._page.go_back(wait_until="domcontentloaded")
+                self._delay(1, 2)
+                self._dismiss_overlays()
+
             except Exception as exc:
-                logger.warning("Failed to extract post: {}", exc)
+                logger.warning("  [{}/{}] Failed: {}", i + 1, min(total_items, max_posts), str(exc)[:80])
+                try:
+                    self.go_to_hashtag(tag)
+                    self._scroll_down(times=max(1, i // 6))
+                except Exception:
+                    break
+
+            if (i + 1) % 5 == 0:
+                logger.info("  #{} progress: {}/{}, {} collected", tag, i + 1, min(total_items, max_posts), len(results))
 
         self._all_collected.extend(results)
         if results:
             self._save_json(results, f"hashtag_{tag}_{self._timestamp()}.json")
-        logger.info("Collected {} posts from #{}", len(results), tag)
+        logger.info("Collected {} posts from #{} (no_caption={})",
+                     len(results), tag, skipped_no_caption)
         return results
 
     def crawl_explore(self, max_posts: int = 20) -> list[dict]:
@@ -900,7 +1457,7 @@ class InstagramBrowserCrawler:
         return results
 
     def search_and_crawl(self, keyword: str, max_results: int = 20) -> list[dict]:
-        """Search Instagram and crawl results."""
+        """Search Instagram and crawl results by clicking grid items."""
         logger.info("=== Searching '{}' ===", keyword)
 
         self._page.goto(
@@ -909,24 +1466,81 @@ class InstagramBrowserCrawler:
         )
         self._delay(3, 5)
 
-        links = self._collect_grid_links(max_results)
-        results = []
+        # Scroll to load grid items
+        self._scroll_down(times=max(1, max_results // 6))
+        self._delay(1, 2)
 
-        for link in links:
+        results = []
+        skipped_no_caption = 0
+        consecutive_fails = 0
+        visited_urls = set()
+        error_phrases = [
+            "링크가 잘못되었거나", "페이지가 삭제", "Page Not Found",
+            "문제가 발생하여", "읽어들이지 못했습니다",
+            "댓글", "모두 보기", "좋아요", "게시물", "팔로워",
+            "로그인", "가입하기", "Something went wrong",
+        ]
+
+        grid_links = self._page.locator('a[href*="/p/"], a[href*="/reel/"]')
+        total_items = grid_links.count()
+
+        for i in range(min(total_items, max_results)):
             try:
-                self._page.goto(link, wait_until="domcontentloaded")
-                self._delay(2, 4)
-                post_data = self._extract_post_data(link)
+                grid_links = self._page.locator('a[href*="/p/"], a[href*="/reel/"]')
+                if i >= grid_links.count():
+                    break
+
+                href = grid_links.nth(i).get_attribute("href", timeout=2000) or ""
+                clean_url = href.split("?")[0]
+                if clean_url in visited_urls:
+                    continue
+                visited_urls.add(clean_url)
+
+                grid_links.nth(i).click(timeout=5000)
+                self._delay(3, 5)
+
+                post_data = self._extract_post_data()
                 post_data["source"] = f"search:{keyword}"
-                if post_data["caption"] and self._is_relevant(post_data):
+
+                caption = post_data.get("caption", "")
+                is_error = not caption or any(ep in caption for ep in error_phrases)
+                if is_error:
+                    skipped_no_caption += 1
+                    consecutive_fails += 1
+                    if consecutive_fails >= 3:
+                        logger.warning("  '{}': rate limited, skipping", keyword)
+                        break
+                elif self._is_relevant(post_data):
+                    consecutive_fails = 0
                     results.append(post_data)
+                else:
+                    consecutive_fails = 0
+
+                self._page.go_back(wait_until="domcontentloaded")
+                self._delay(1, 2)
+                self._dismiss_overlays()
+
             except Exception as exc:
-                logger.warning("Failed to extract: {}", exc)
+                logger.warning("  [{}/{}] Failed: {}", i + 1, min(total_items, max_results), str(exc)[:80])
+                try:
+                    self._page.goto(
+                        f"https://www.instagram.com/explore/search/keyword/?q={keyword}",
+                        wait_until="domcontentloaded",
+                    )
+                    self._delay(2, 3)
+                    self._scroll_down(times=max(1, i // 6))
+                except Exception:
+                    break
+
+            if (i + 1) % 5 == 0:
+                logger.info("  '{}' progress: {}/{}, {} collected",
+                            keyword, i + 1, min(total_items, max_results), len(results))
 
         self._all_collected.extend(results)
         if results:
             self._save_json(results, f"search_{keyword}_{self._timestamp()}.json")
-        logger.info("Collected {} results for '{}'", len(results), keyword)
+        logger.info("Collected {} results for '{}' (no_caption={})",
+                     len(results), keyword, skipped_no_caption)
         return results
 
     # ------------------------------------------------------------------
@@ -971,7 +1585,10 @@ class InstagramBrowserCrawler:
         if hashtags:
             for h in hashtags:
                 try:
-                    self.crawl_hashtag(h, max_posts=posts_per_source)
+                    # Try intercept method first (no rate limit), fallback to click
+                    results = self.crawl_hashtag_intercept(h, max_posts=posts_per_source)
+                    if not results:
+                        results = self.crawl_hashtag(h, max_posts=posts_per_source)
                     stats["hashtags"] += 1
                 except Exception as exc:
                     logger.error("Failed #{}: {}", h, exc)

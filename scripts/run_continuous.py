@@ -59,7 +59,7 @@ def main():
                 skip_crawl=skip_crawl,
                 skip_train=False,
                 crawl_count=CRAWL_COUNT,
-                headless=True,
+                headless=False,
             )
             results.append(result)
 
@@ -80,6 +80,19 @@ def main():
             print(f"\n  ✗ 사이클 #{cycle_num} 실패: {exc}")
             traceback.print_exc()
             results.append({"cycle": cycle_num, "error": str(exc)})
+
+        # GPU 메모리 강제 해제 (사이클 간 OOM 방지)
+        try:
+            import gc
+            import torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                vram_free = torch.cuda.mem_get_info()[0] / 1024**3
+                print(f"    GPU 메모리 정리 완료 (여유: {vram_free:.1f}GB)")
+        except Exception:
+            pass
 
         # 시간 남았으면 휴식
         if datetime.now() < deadline:
