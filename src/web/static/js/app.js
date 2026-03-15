@@ -770,62 +770,134 @@
   const threadsHistory = $("#threadsHistory");
   const threadsEmpty = $("#threadsEmpty");
 
-  let threadsItems = [];
+  // Threads image
+  const threadsSrcBtns = $$(".threads-src-btn");
+  const threadsUploadSection = $("#threadsUploadSection");
+  const threadsAiSection = $("#threadsAiSection");
+  const threadsPreviewSection = $("#threadsPreviewSection");
+  const threadsPreviewImg = $("#threadsPreviewImg");
+  const threadsImageFile = $("#threadsImageFile");
+  const threadsAiPrompt = $("#threadsAiPrompt");
+  const threadsGenerateImageBtn = $("#threadsGenerateImage");
+  const threadsRemoveImageBtn = $("#threadsRemoveImage");
 
+  let threadsItems = [];
+  let threadsFilename = "";
+
+  // Source toggle
+  threadsSrcBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      threadsSrcBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const src = btn.dataset.source;
+      threadsUploadSection.classList.toggle("hidden", src !== "upload");
+      threadsAiSection.classList.toggle("hidden", src !== "ai");
+      if (src === "none") {
+        threadsFilename = "";
+        threadsPreviewImg.src = "";
+        threadsPreviewSection.classList.add("hidden");
+      }
+    });
+  });
+
+  // Upload
+  threadsImageFile.addEventListener("change", async () => {
+    const file = threadsImageFile.files[0];
+    if (!file) return;
+    showLoading("이미지 업로드 중...");
+    const formData = new FormData();
+    formData.append("image", file);
+    try {
+      const data = await api("/api/upload-image", { method: "POST", body: formData });
+      if (data.error) { alert(`업로드 실패: ${data.error}`); }
+      else {
+        threadsFilename = data.filename;
+        threadsPreviewImg.src = data.url;
+        threadsPreviewSection.classList.remove("hidden");
+      }
+    } catch (e) { alert("업로드 오류"); }
+    finally { hideLoading(); }
+  });
+
+  // AI image
+  threadsGenerateImageBtn.addEventListener("click", async () => {
+    const topic = threadsAiPrompt.value.trim();
+    if (!topic) { alert("이미지 주제를 입력해주세요."); return; }
+    showLoading("AI 이미지 생성 중...");
+    threadsGenerateImageBtn.disabled = true;
+    try {
+      const data = await apiPost("/api/generate-image", { topic });
+      if (data.error) { alert(`생성 실패: ${data.error}`); }
+      else {
+        threadsFilename = data.filename;
+        threadsPreviewImg.src = data.url;
+        threadsPreviewSection.classList.remove("hidden");
+      }
+    } catch (e) { alert("이미지 생성 오류"); }
+    finally { hideLoading(); threadsGenerateImageBtn.disabled = false; }
+  });
+
+  // Remove image
+  threadsRemoveImageBtn.addEventListener("click", () => {
+    threadsFilename = "";
+    threadsPreviewImg.src = "";
+    threadsPreviewSection.classList.add("hidden");
+    threadsImageFile.value = "";
+  });
+
+  // Generate text
   generateThreadsBtn.addEventListener("click", async () => {
     const topic = threadsTopic.value.trim() || "일상";
     showLoading("Threads 글 생성 중...");
     generateThreadsBtn.disabled = true;
-
     try {
       const data = await apiPost("/api/generate-threads", { topic });
-      if (data.error) {
-        alert(`생성 실패: ${data.error}`);
-      } else {
-        threadsText.value = data.text;
-      }
-    } catch (e) {
-      alert("생성 중 오류가 발생했습니다.");
-    } finally {
-      hideLoading();
-      generateThreadsBtn.disabled = false;
-    }
+      if (data.error) { alert(`생성 실패: ${data.error}`); }
+      else { threadsText.value = data.text; }
+    } catch (e) { alert("생성 중 오류가 발생했습니다."); }
+    finally { hideLoading(); generateThreadsBtn.disabled = false; }
   });
 
+  // Post
   postThreadsBtn.addEventListener("click", () => {
     const text = threadsText.value.trim();
-    if (!text) {
-      alert("게시할 글을 입력하거나 AI로 생성해주세요.");
-      return;
-    }
+    if (!text) { alert("게시할 글을 입력하거나 AI로 생성해주세요."); return; }
 
-    // Save to history
     threadsItems.unshift({
       text,
+      image: threadsFilename ? `/uploads/${threadsFilename}` : "",
       topic: threadsTopic.value.trim() || "",
       time: new Date().toISOString(),
     });
     renderThreadsHistory();
 
-    // Clear input
     threadsText.value = "";
     threadsTopic.value = "";
+    threadsFilename = "";
+    threadsPreviewImg.src = "";
+    threadsPreviewSection.classList.add("hidden");
+    threadsImageFile.value = "";
 
-    alert("Threads 게시글이 저장되었습니다!\n(실제 Threads 게시는 추후 구현)");
+    alert("Threads 게시글이 저장되었습니다!");
   });
 
   function renderThreadsHistory() {
     threadsHistory.querySelectorAll(".threads-history-item").forEach((el) => el.remove());
 
-    if (threadsItems.length === 0) {
-      threadsEmpty.classList.remove("hidden");
-      return;
-    }
+    if (threadsItems.length === 0) { threadsEmpty.classList.remove("hidden"); return; }
     threadsEmpty.classList.add("hidden");
 
     threadsItems.forEach((item) => {
       const div = document.createElement("div");
       div.className = "threads-history-item";
+
+      if (item.image) {
+        const img = document.createElement("img");
+        img.src = item.image;
+        img.alt = "";
+        img.style.cssText = "width:100%;max-height:200px;object-fit:cover;border-radius:8px;margin-bottom:8px;";
+        div.appendChild(img);
+      }
 
       const p = document.createElement("p");
       p.textContent = item.text;

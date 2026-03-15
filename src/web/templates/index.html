@@ -147,14 +147,52 @@
                             <div class="avatar small">하나</div>
                             <strong>유하나</strong>
                         </div>
-                        <textarea id="threadsText" rows="5" placeholder="스레드에 올릴 글을 작성하거나 AI가 생성합니다..."></textarea>
-                        <div class="threads-actions">
+
+                        <!-- Image -->
+                        <div class="form-section">
+                            <label class="form-label">이미지 (선택)</label>
+                            <div class="source-toggle">
+                                <button class="source-btn threads-src-btn active" data-source="upload">📁 업로드</button>
+                                <button class="source-btn threads-src-btn" data-source="ai">🤖 AI 생성</button>
+                                <button class="source-btn threads-src-btn" data-source="none">없음</button>
+                            </div>
+                        </div>
+
+                        <div class="form-section" id="threadsUploadSection">
+                            <div class="upload-area" id="threadsUploadArea">
+                                <input type="file" id="threadsImageFile" accept="image/*">
+                                <div class="upload-placeholder">
+                                    <p class="upload-icon">📷</p>
+                                    <p>이미지를 드래그하거나 클릭</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section hidden" id="threadsAiSection">
                             <div class="input-row">
+                                <input type="text" id="threadsAiPrompt" placeholder="이미지 주제 (예: 카페에서 라떼)">
+                                <button id="threadsGenerateImage" class="btn-action">생성</button>
+                            </div>
+                        </div>
+
+                        <div class="form-section hidden" id="threadsPreviewSection">
+                            <div class="image-preview">
+                                <img id="threadsPreviewImg" src="" alt="미리보기">
+                                <button class="remove-image" id="threadsRemoveImage">✕</button>
+                            </div>
+                        </div>
+
+                        <!-- Text -->
+                        <div class="form-section">
+                            <label class="form-label">텍스트</label>
+                            <textarea id="threadsText" rows="4" placeholder="스레드에 올릴 글을 작성하거나 AI가 생성합니다..."></textarea>
+                            <div class="input-row" style="margin-top:8px">
                                 <input type="text" id="threadsTopic" placeholder="주제 (예: 카페, 일상, 고민)">
                                 <button id="generateThreads" class="btn-action">🤖 AI 생성</button>
                             </div>
-                            <button id="postThreads" class="btn-primary" style="margin-top:10px">🧵 Threads 게시</button>
                         </div>
+
+                        <button id="postThreads" class="btn-primary" style="margin-top:10px;width:100%">🧵 Threads 게시</button>
                     </div>
 
                     <div class="threads-history-label">생성 기록</div>
