@@ -78,11 +78,13 @@ class TextGenerator:
         )
 
         # Resolve paths ------------------------------------------------------
+        # Resolve adapter paths ------------------------------------------------
+        adapter_ig = self._project_root / self._settings["model"].get("adapter_instagram", "models/adapter_instagram")
+        adapter_th = self._project_root / self._settings["model"].get("adapter_threads", "models/adapter_threads")
+        adapter_default = self._project_root / self._settings["model"]["adapter_path"]
         merged_path = self._project_root / self._settings["model"]["merged_path"]
-        adapter_path = self._project_root / self._settings["model"]["adapter_path"]
 
         if merged_path.exists() and (merged_path / "config.json").exists():
-            # Merged model available: load directly
             logger.info("Loading merged model from {} ...", merged_path)
             self._tokenizer = AutoTokenizer.from_pretrained(
                 str(merged_path), trust_remote_code=True,
@@ -93,11 +95,11 @@ class TextGenerator:
                 device_map="auto",
                 trust_remote_code=True,
             )
-        elif adapter_path.exists() and (adapter_path / "adapter_config.json").exists():
-            # Load base model + apply LoRA adapter
-            base_model_name = self._settings["model"]["fallback_model"]  # Qwen2.5-1.5B
-            logger.info("Loading base model '{}' + adapter from {} ...",
-                        base_model_name, adapter_path)
+            self._has_adapters = False
+        else:
+            # Load base model + platform adapters
+            base_model_name = self._settings["model"]["fallback_model"]
+            logger.info("Loading base model '{}' ...", base_model_name)
             self._tokenizer = AutoTokenizer.from_pretrained(
                 base_model_name, trust_remote_code=True,
             )
@@ -107,12 +109,32 @@ class TextGenerator:
                 device_map="auto",
                 trust_remote_code=True,
             )
-            self._model = PeftModel.from_pretrained(base_model, str(adapter_path))
-            logger.info("LoRA adapter applied.")
-        else:
-            raise FileNotFoundError(
-                f"Neither merged model ({merged_path}) nor adapter ({adapter_path}) found."
-            )
+
+            # Load first available adapter as primary
+            primary_adapter = None
+            for name, path in [("instagram", adapter_ig), ("threads", adapter_th), ("default", adapter_default)]:
+                if path.exists() and (path / "adapter_config.json").exists():
+                    primary_adapter = (name, path)
+                    break
+
+            if primary_adapter is None:
+                raise FileNotFoundError("No adapter found in models/adapter_instagram, adapter_threads, or adapter.")
+
+            name, path = primary_adapter
+            logger.info("Loading primary adapter '{}' from {} ...", name, path)
+            self._model = PeftModel.from_pretrained(base_model, str(path), adapter_name=name)
+
+            # Load additional adapters
+            self._available_adapters = {name}
+            for adapter_name, adapter_path in [("instagram", adapter_ig), ("threads", adapter_th)]:
+                if adapter_name not in self._available_adapters and adapter_path.exists() and (adapter_path / "adapter_config.json").exists():
+                    logger.info("Loading adapter '{}' from {} ...", adapter_name, adapter_path)
+                    self._model.load_adapter(str(adapter_path), adapter_name=adapter_name)
+                    self._available_adapters.add(adapter_name)
+
+            self._has_adapters = True
+            self._active_adapter = name
+            logger.info("Adapters loaded: {}", self._available_adapters)
 
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
@@ -242,12 +264,36 @@ class TextGenerator:
         """Access the post/comment memory system."""
         return self._memory
 
+    def set_platform(self, platform: str) -> None:
+        """Switch to a platform-specific adapter.
+
+        Parameters
+        ----------
+        platform : str
+            "instagram" or "threads"
+        """
+        if not self._has_adapters:
+            return
+        if platform not in self._available_adapters:
+            logger.warning("Adapter '{}' not available (have: {})", platform, self._available_adapters)
+            return
+        if platform != self._active_adapter:
+            self._model.set_adapter(platform)
+            self._active_adapter = platform
+            logger.debug("Switched to '{}' adapter", platform)
+
+    @property
+    def active_platform(self) -> str:
+        """Currently active adapter name."""
+        return getattr(self, "_active_adapter", "default")
+
     def generate_caption(self, topic: str, context: str = "") -> str:
         """Generate an Instagram caption with memory context.
 
         Includes recent post history to avoid repetition.
         """
-        # Build memory context
+        self.set_platform("instagram")
+
         memory_ctx = self._memory.build_post_context(max_posts=5)
         if memory_ctx:
             instruction = (
@@ -258,12 +304,37 @@ class TextGenerator:
             instruction = f"{topic}에 대한 인스타그램 캡션을 작성해줘"
 
         prompt = f"### Instruction:\n{instruction}\n\n### Response:\n"
-        logger.debug("Caption prompt length: {} chars", len(prompt))
+        logger.debug("Caption prompt (IG adapter): {} chars", len(prompt))
         return self.generate(prompt, max_new_tokens=self._default_max_new_tokens)
 
-    def generate_reply(self, comment: str, post_caption: str = "") -> str:
+    def generate_threads_post(self, topic: str, context: str = "") -> str:
+        """Generate a Threads post in conversational style.
+
+        Uses the Threads adapter for more casual, text-first tone.
+        """
+        self.set_platform("threads")
+
+        memory_ctx = self._memory.build_post_context(max_posts=3)
+        if memory_ctx:
+            instruction = (
+                f"{memory_ctx}\n\n"
+                f"위 글과 겹치지 않게, {topic}에 대한 스레드 게시글을 작성해줘. "
+                f"대화하듯 자연스럽게 써줘."
+            )
+        else:
+            instruction = (
+                f"{topic}에 대한 스레드 게시글을 작성해줘. "
+                f"대화하듯 자연스럽게 써줘."
+            )
+
+        prompt = f"### Instruction:\n{instruction}\n\n### Response:\n"
+        logger.debug("Threads post prompt: {} chars", len(prompt))
+        return self.generate(prompt, max_new_tokens=self._default_max_new_tokens)
+
+    def generate_reply(self, comment: str, post_caption: str = "", platform: str = "instagram") -> str:
         """Generate a reply with memory of past interactions."""
-        # Include post caption and recent reply context
+        self.set_platform(platform)
+
         memory_ctx = self._memory.build_comment_context(max_comments=5)
 
         parts = []

@@ -249,6 +249,22 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ── API: Generate Threads post ────────────────────────────────
+
+    @app.route("/api/generate-threads", methods=["POST"])
+    def api_generate_threads():
+        data = request.get_json(force=True)
+        topic = (data.get("topic") or "").strip()
+        if not topic:
+            topic = "일상"
+
+        try:
+            gen = _get_generator()
+            text = gen.generate_threads_post(topic)
+            return jsonify({"text": text})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     # ── API: Generate hashtags ─────────────────────────────────────
 
     @app.route("/api/generate-hashtags", methods=["POST"])
