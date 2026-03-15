@@ -761,6 +761,85 @@
     }
   });
 
+  // ── Threads Tab ────────────────────────────────────────
+
+  const threadsText = $("#threadsText");
+  const threadsTopic = $("#threadsTopic");
+  const generateThreadsBtn = $("#generateThreads");
+  const postThreadsBtn = $("#postThreads");
+  const threadsHistory = $("#threadsHistory");
+  const threadsEmpty = $("#threadsEmpty");
+
+  let threadsItems = [];
+
+  generateThreadsBtn.addEventListener("click", async () => {
+    const topic = threadsTopic.value.trim() || "일상";
+    showLoading("Threads 글 생성 중...");
+    generateThreadsBtn.disabled = true;
+
+    try {
+      const data = await apiPost("/api/generate-threads", { topic });
+      if (data.error) {
+        alert(`생성 실패: ${data.error}`);
+      } else {
+        threadsText.value = data.text;
+      }
+    } catch (e) {
+      alert("생성 중 오류가 발생했습니다.");
+    } finally {
+      hideLoading();
+      generateThreadsBtn.disabled = false;
+    }
+  });
+
+  postThreadsBtn.addEventListener("click", () => {
+    const text = threadsText.value.trim();
+    if (!text) {
+      alert("게시할 글을 입력하거나 AI로 생성해주세요.");
+      return;
+    }
+
+    // Save to history
+    threadsItems.unshift({
+      text,
+      topic: threadsTopic.value.trim() || "",
+      time: new Date().toISOString(),
+    });
+    renderThreadsHistory();
+
+    // Clear input
+    threadsText.value = "";
+    threadsTopic.value = "";
+
+    alert("Threads 게시글이 저장되었습니다!\n(실제 Threads 게시는 추후 구현)");
+  });
+
+  function renderThreadsHistory() {
+    threadsHistory.querySelectorAll(".threads-history-item").forEach((el) => el.remove());
+
+    if (threadsItems.length === 0) {
+      threadsEmpty.classList.remove("hidden");
+      return;
+    }
+    threadsEmpty.classList.add("hidden");
+
+    threadsItems.forEach((item) => {
+      const div = document.createElement("div");
+      div.className = "threads-history-item";
+
+      const p = document.createElement("p");
+      p.textContent = item.text;
+      div.appendChild(p);
+
+      const meta = document.createElement("div");
+      meta.className = "threads-item-meta";
+      meta.textContent = `${item.topic ? item.topic + " · " : ""}${formatDate(item.time)}`;
+      div.appendChild(meta);
+
+      threadsHistory.appendChild(div);
+    });
+  }
+
   // ── Monitor Tab ────────────────────────────────────────
 
   const monitorFeed = $("#monitorFeed");
