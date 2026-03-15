@@ -265,6 +265,20 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ── API: Generate image prompt from caption ─────────────────────
+
+    @app.route("/api/generate-image-prompt", methods=["POST"])
+    def api_generate_image_prompt():
+        data = request.get_json(force=True)
+        caption = (data.get("caption") or data.get("topic") or "").strip()
+        platform = data.get("platform", "instagram")
+        if not caption:
+            return jsonify({"error": "캡션 또는 주제를 입력하세요"}), 400
+
+        from src.inference.image_prompt_builder import generate_image_prompt
+        prompt = generate_image_prompt(caption, platform)
+        return jsonify({"prompt": prompt})
+
     # ── API: Generate hashtags ─────────────────────────────────────
 
     @app.route("/api/generate-hashtags", methods=["POST"])

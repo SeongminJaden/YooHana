@@ -253,6 +253,29 @@
     }
   });
 
+  // ── Auto Image Prompt from Caption ────────────────────
+
+  const autoPromptBtn = $("#autoPrompt");
+  autoPromptBtn.addEventListener("click", async () => {
+    const caption = captionText.value.trim() || captionTopic.value.trim() || "일상";
+    showLoading("프롬프트 생성 중...");
+    try {
+      const data = await apiPost("/api/generate-image-prompt", {
+        caption,
+        platform: "instagram",
+      });
+      if (data.error) {
+        alert(data.error);
+      } else {
+        aiPrompt.value = data.prompt;
+      }
+    } catch (e) {
+      alert("프롬프트 생성 오류");
+    } finally {
+      hideLoading();
+    }
+  });
+
   // ── AI Caption Generation ──────────────────────────────
 
   generateCaptionBtn.addEventListener("click", async () => {
@@ -816,6 +839,22 @@
         threadsPreviewSection.classList.remove("hidden");
       }
     } catch (e) { alert("업로드 오류"); }
+    finally { hideLoading(); }
+  });
+
+  // Auto prompt from text
+  const threadsAutoPromptBtn = $("#threadsAutoPrompt");
+  threadsAutoPromptBtn.addEventListener("click", async () => {
+    const text = threadsText.value.trim() || threadsTopic.value.trim() || "일상";
+    showLoading("프롬프트 생성 중...");
+    try {
+      const data = await apiPost("/api/generate-image-prompt", {
+        caption: text,
+        platform: "threads",
+      });
+      if (data.error) { alert(data.error); }
+      else { threadsAiPrompt.value = data.prompt; }
+    } catch (e) { alert("프롬프트 생성 오류"); }
     finally { hideLoading(); }
   });
 
