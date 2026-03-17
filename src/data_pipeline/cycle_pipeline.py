@@ -197,8 +197,8 @@ def convert_crawled_to_training(
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # 플랫폼별 분리 저장
-    ig_records = [r for r in records if not r.get("source", "").startswith("threads:")]
-    th_records = [r for r in records if r.get("source", "").startswith("threads:")]
+    ig_records = [r for r in records if not r.get("source", "").startswith("threads")]
+    th_records = [r for r in records if r.get("source", "").startswith("threads")]
 
     ig_path = _TRAINING_DIR / "instagram_captions.jsonl"
     th_path = _TRAINING_DIR / "threads_captions.jsonl"

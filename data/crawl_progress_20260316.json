@@ -1,0 +1,50 @@
+{
+  "task": "Threads 대량 크롤링 10K",
+  "script": "scripts/run_threads_crawl_10k.py",
+  "started_at": "2026-03-16T15:47:54",
+  "stopped_at": "2026-03-16T18:22:00",
+  "elapsed_minutes": 154,
+  "status": "중단 (수동)",
+
+  "progress": {
+    "completed_keywords": 131,
+    "total_keywords": 283,
+    "remaining_keywords": 152,
+    "last_completed_keyword": "보드게임",
+    "current_keyword": "퍼즐",
+    "keyword_index": 132
+  },
+
+  "collection": {
+    "session_collected": 3177,
+    "previous_collected": 3821,
+    "total_raw_posts": 6998,
+    "today_files": 105,
+    "target": 10000,
+    "progress_pct": 70.0,
+    "remaining_needed": 3002
+  },
+
+  "quality": {
+    "avg_per_keyword": 24,
+    "spam_filtered": "2건 (페스티벌, 취미)",
+    "zero_result_keywords": ["캐주얼"]
+  },
+
+  "categories_completed": [
+    "일상/감성 (추가분)",
+    "카페/음식 (추가분)",
+    "패션/뷰티 (전체)",
+    "여행/나들이 (추가분)",
+    "라이프스타일 (대부분)"
+  ],
+  "categories_remaining": [
+    "라이프스타일 (일부: 식물~가젯)",
+    "관계/감정 (전체)",
+    "트렌드/문화 (전체)",
+    "2026 봄 트렌드 (전체)",
+    "Threads 특화 (전체)"
+  ],
+
+  "resume_note": "다시 시작하면 run_threads_crawl_10k.py가 이미 수집된 키워드를 자동 스킵하므로 그대로 재실행하면 됨"
+}

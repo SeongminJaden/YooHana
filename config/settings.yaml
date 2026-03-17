@@ -41,6 +41,7 @@ instagram:
   session_file: "instagram_session.json"
   rate_limits:
     comments_per_hour: 10
+    dms_per_hour: 8
     likes_per_hour: 30
     posts_per_day: 2
     delay_min: 2.0

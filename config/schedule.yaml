@@ -30,6 +30,16 @@ comments:
   off_peak_interval_minutes: 120
   max_replies_per_check: 5
 
+# DM monitoring
+dms:
+  check_interval_minutes: 20
+  peak_hours:
+    start: 9
+    end: 23
+  off_peak_interval_minutes: 60
+  max_replies_per_check: 3
+  max_conversations_scan: 10
+
 # Story posting
 stories:
   enabled: true

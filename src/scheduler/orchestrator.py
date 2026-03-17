@@ -70,6 +70,7 @@ class Orchestrator:
         self.image_client: Any = None
         self.poster: Any = None
         self.commenter: Any = None
+        self.dm_handler: Any = None
         self.content_planner: ContentPlanner | None = None
         self.topic_generator: TopicGenerator | None = None
         self.task_queue: TaskQueue = TaskQueue()
@@ -222,6 +223,26 @@ class Orchestrator:
             logger.warning("TextGenerator 없음 — 댓글 모니터링 비활성화")
             self.commenter = None
 
+        # DM handler (Playwright-based)
+        if self.text_generator:
+            try:
+                from src.instagram.dm_handler import BrowserDMHandler
+
+                self.dm_handler = BrowserDMHandler(
+                    text_generator=self.text_generator,
+                    headless=True,
+                )
+                logger.info("BrowserDMHandler 초기화 완료")
+            except (ImportError, Exception) as exc:
+                logger.warning(
+                    "BrowserDMHandler 사용 불가 ({}). DM 모니터링 없이 실행.",
+                    exc,
+                )
+                self.dm_handler = None
+        else:
+            logger.warning("TextGenerator 없음 — DM 모니터링 비활성화")
+            self.dm_handler = None
+
         # Content planner & topic generator
         self.topic_generator = TopicGenerator(self.persona)
         self.content_planner = ContentPlanner(self.text_generator, self.persona)
@@ -336,6 +357,59 @@ class Orchestrator:
             "스케줄: 오프피크 댓글 체크 {}분 간격 (지터 ±{}분)",
             offpeak_interval,
             offpeak_jitter,
+        )
+
+        # --- DM monitoring: peak hours ---
+        dm_cfg = self._schedule_cfg.get("dms", {})
+        dm_interval = dm_cfg.get("check_interval_minutes", 20)
+        dm_peak_start = dm_cfg.get("peak_hours", {}).get("start", 9)
+        dm_peak_end = dm_cfg.get("peak_hours", {}).get("end", 23)
+        dm_jitter = random.randint(0, self._jitter)
+
+        self._scheduler.add_job(
+            self._safe_run(self.run_dm_cycle),
+            CronTrigger(
+                minute=f"*/{dm_interval}",
+                hour=f"{dm_peak_start}-{dm_peak_end - 1}",
+                timezone=self._tz,
+                jitter=dm_jitter * 60,
+            ),
+            id="dm_check_peak",
+            name="DM Monitor (Peak)",
+            replace_existing=True,
+        )
+        logger.info(
+            "스케줄: 피크 DM 체크 {}분, {}시-{}시 (지터 ±{}분)",
+            dm_interval,
+            dm_peak_start,
+            dm_peak_end,
+            dm_jitter,
+        )
+
+        # --- DM monitoring: off-peak hours ---
+        dm_offpeak_interval = dm_cfg.get("off_peak_interval_minutes", 60)
+        dm_offpeak_jitter = random.randint(0, self._jitter)
+
+        dm_offpeak_hours = ",".join(
+            str(h) for h in range(24) if h < dm_peak_start or h >= dm_peak_end
+        )
+
+        self._scheduler.add_job(
+            self._safe_run(self.run_dm_cycle),
+            CronTrigger(
+                minute=f"*/{dm_offpeak_interval}",
+                hour=dm_offpeak_hours,
+                timezone=self._tz,
+                jitter=dm_offpeak_jitter * 60,
+            ),
+            id="dm_check_offpeak",
+            name="DM Monitor (Off-Peak)",
+            replace_existing=True,
+        )
+        logger.info(
+            "스케줄: 오프피크 DM 체크 {}분 간격 (지터 ±{}분)",
+            dm_offpeak_interval,
+            dm_offpeak_jitter,
         )
 
         # --- Task queue processor (every 5 min) ---
@@ -562,6 +636,31 @@ class Orchestrator:
         )
         logger.info("게시물 기록 저장: {} ({})", filename, topic)
 
+    def run_dm_cycle(self) -> None:
+        """Check for unread DMs, generate replies, and send them."""
+        logger.info("--- DM 모니터링 사이클 시작 ---")
+
+        if not self.dm_handler:
+            logger.warning("BrowserDMHandler 없음 — DM 사이클 건너뜀")
+            return
+
+        dm_cfg = self._schedule_cfg.get("dms", {})
+        base_replies = dm_cfg.get("max_replies_per_check", 3)
+        max_replies = self._warmup_limit(base_replies)
+        max_convos = dm_cfg.get("max_conversations_scan", 10)
+
+        try:
+            replied = self.dm_handler.auto_reply_dms(
+                max_replies=max_replies,
+                max_convos=max_convos,
+            )
+            logger.info("DM 사이클 완료: {}개 답변", replied)
+        except Exception as exc:
+            logger.error("DM 사이클 실패: {}", exc)
+            self.task_queue.add_task(
+                "retry_dm", {"error": str(exc)}, priority=2
+            )
+
     def run_comment_cycle(self) -> None:
         """Check for unreplied comments, generate replies, and post them."""
         logger.info("--- 댓글 모니터링 사이클 시작 ---")
@@ -623,6 +722,8 @@ class Orchestrator:
             self.run_posting_cycle()
         elif task.type == "retry_comment":
             self.run_comment_cycle()
+        elif task.type == "retry_dm":
+            self.run_dm_cycle()
         elif task.type in ("retry_reply", "retry_image"):
             pass  # Handled in next cycle
         else:
@@ -668,6 +769,11 @@ class Orchestrator:
             logger.info("APScheduler 종료")
 
         # Close browser components
+        if self.dm_handler:
+            try:
+                self.dm_handler.close()
+            except Exception:
+                pass
         if self.commenter:
             try:
                 self.commenter.close()

@@ -618,6 +618,154 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": f"자동 답글 실패: {exc}"}), 500
 
+    # ── API: DMs ───────────────────────────────────────────────
+
+    _DM_CACHE = _PROJECT_ROOT / "data" / "dm_cache.json"
+    _REPLIED_DM_FILE = _PROJECT_ROOT / "data" / "replied_dm_ids.json"
+
+    def _load_dm_cache() -> list[dict]:
+        if not _DM_CACHE.exists():
+            return []
+        try:
+            return json.loads(_DM_CACHE.read_text("utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+
+    def _save_dm_cache(dms: list[dict]) -> None:
+        _DM_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _DM_CACHE.write_text(
+            json.dumps(dms, ensure_ascii=False, indent=2), "utf-8"
+        )
+
+    def _load_replied_dm_ids() -> set[str]:
+        if not _REPLIED_DM_FILE.exists():
+            return set()
+        try:
+            return set(json.loads(_REPLIED_DM_FILE.read_text("utf-8")))
+        except (json.JSONDecodeError, OSError):
+            return set()
+
+    @app.route("/api/dms")
+    def api_get_dms():
+        dms = _load_dm_cache()
+        replied_ids = _load_replied_dm_ids()
+        for dm in dms:
+            if dm["id"] in replied_ids:
+                dm["replied"] = True
+        return jsonify(dms)
+
+    @app.route("/api/dms/scan", methods=["POST"])
+    def api_scan_dms():
+        data = request.get_json(force=True)
+        max_convos = int(data.get("max_conversations", 10))
+
+        try:
+            gen = _get_generator()
+            from src.instagram.dm_handler import BrowserDMHandler
+
+            handler = BrowserDMHandler(
+                text_generator=gen, headless=True
+            )
+            try:
+                conversations = handler.get_conversations(max_convos=max_convos)
+            finally:
+                handler.close()
+
+            existing = _load_dm_cache()
+            existing_ids = {d["id"] for d in existing}
+            replied_ids = _load_replied_dm_ids()
+            new_count = 0
+
+            for convo in conversations:
+                if convo["id"] not in existing_ids:
+                    convo["replied"] = convo["id"] in replied_ids
+                    convo["reply_text"] = ""
+                    convo["replied_at"] = None
+                    convo["scanned_at"] = datetime.now().isoformat()
+                    existing.append(convo)
+                    existing_ids.add(convo["id"])
+                    new_count += 1
+
+            _save_dm_cache(existing)
+            return jsonify({
+                "new": new_count,
+                "total": len(existing),
+                "message": f"새 DM {new_count}개 발견",
+            })
+        except Exception as exc:
+            return jsonify({"error": f"DM 스캔 실패: {exc}"}), 500
+
+    @app.route("/api/dms/reply", methods=["POST"])
+    def api_reply_dm():
+        data = request.get_json(force=True)
+        dm_id = data.get("dm_id", "")
+        custom_reply = (data.get("reply_text") or "").strip()
+
+        dms = _load_dm_cache()
+        dm = next((d for d in dms if d["id"] == dm_id), None)
+        if not dm:
+            return jsonify({"error": "DM을 찾을 수 없습니다"}), 404
+        if dm.get("replied"):
+            return jsonify({"error": "이미 답변한 DM입니다"}), 400
+
+        try:
+            gen = _get_generator()
+
+            if not custom_reply:
+                last_msg = dm.get("last_message", "")
+                custom_reply = gen.generate_reply(
+                    last_msg, platform="instagram"
+                )
+                if not custom_reply:
+                    return jsonify({"error": "답변 생성 실패"}), 500
+
+            from src.instagram.dm_handler import BrowserDMHandler
+
+            handler = BrowserDMHandler(
+                text_generator=gen, headless=True
+            )
+            try:
+                success = handler.send_dm_reply(dm["url"], custom_reply)
+            finally:
+                handler.close()
+
+            if success:
+                dm["replied"] = True
+                dm["reply_text"] = custom_reply
+                dm["replied_at"] = datetime.now().isoformat()
+                _save_dm_cache(dms)
+                return jsonify({"ok": True, "reply_text": custom_reply})
+            else:
+                return jsonify({"error": "DM 전송 실패"}), 500
+        except Exception as exc:
+            return jsonify({"error": f"DM 답변 실패: {exc}"}), 500
+
+    @app.route("/api/dms/auto-reply", methods=["POST"])
+    def api_auto_reply_dms():
+        data = request.get_json(force=True)
+        max_replies = int(data.get("max_replies", 3))
+
+        try:
+            gen = _get_generator()
+            from src.instagram.dm_handler import BrowserDMHandler
+
+            handler = BrowserDMHandler(
+                text_generator=gen, headless=True
+            )
+            try:
+                replied_count = handler.auto_reply_dms(
+                    max_replies=max_replies,
+                )
+            finally:
+                handler.close()
+
+            return jsonify({
+                "replied": replied_count,
+                "message": f"{replied_count}개 DM 답변 완료",
+            })
+        except Exception as exc:
+            return jsonify({"error": f"자동 DM 답변 실패: {exc}"}), 500
+
     # ── API: Training Monitor ───────────────────────────────────
 
     _CYCLE_STATE_PATH = _PROJECT_ROOT / "data" / "cycle_state.json"

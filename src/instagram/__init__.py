@@ -1,8 +1,9 @@
-"""Instagram client module – browser-based posting, comments, and analytics."""
+"""Instagram client module – browser-based posting, comments, DMs, and analytics."""
 
 __all__ = [
     "BrowserPoster",
     "BrowserCommenter",
+    "BrowserDMHandler",
     "InstagramAnalytics",
 ]
 
@@ -15,6 +16,9 @@ def __getattr__(name):
     if name == "BrowserCommenter":
         from src.instagram.commenter import BrowserCommenter
         return BrowserCommenter
+    if name == "BrowserDMHandler":
+        from src.instagram.dm_handler import BrowserDMHandler
+        return BrowserDMHandler
     if name == "InstagramAnalytics":
         from src.instagram.analytics import InstagramAnalytics
         return InstagramAnalytics
