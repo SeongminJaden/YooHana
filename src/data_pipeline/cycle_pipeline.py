@@ -41,6 +41,36 @@ _STOPWORDS = {
     "광고", "협찬", "제공", "리뷰", "이벤트",
 }
 
+# ── 오염/스팸 캡션 필터 패턴 (오류 페이지, 봇 텍스트 등) ─────────
+_SPAM_PATTERNS = [
+    "문제가 발생하여",
+    "페이지를 읽어들이지 못했습니다",
+    "오류가 발생했습니다",
+    "다시 시도해 주세요",
+    "로그인이 필요합니다",
+    "이 페이지는 사용할 수 없습니다",
+    "콘텐츠를 이용할 수 없습니다",
+    "Something went wrong",
+    "Page not found",
+    "Sorry, this page isn't available",
+    "This content isn't available",
+    "The link you followed may be broken",
+    "couldn't load",
+    "try again later",
+]
+
+
+def _is_spam_caption(text: str) -> bool:
+    """오염/스팸 텍스트 판별."""
+    for pattern in _SPAM_PATTERNS:
+        if pattern in text:
+            return True
+    # 순수 이모지/특수문자만 (의미 있는 글자 5자 미만)
+    cleaned = re.sub(r"[^\w가-힣a-zA-Z]", "", text)
+    if len(cleaned) < 5:
+        return True
+    return False
+
 
 def _load_persona_themes() -> list[str]:
     """persona.yaml에서 콘텐츠 테마 키워드를 추출."""
@@ -162,9 +192,17 @@ def convert_crawled_to_training(
             # NFD → NFC 정규화 (macOS/Instagram 수집 데이터)
             caption = unicodedata.normalize("NFC", caption)
 
+            # 오염/스팸 필터링
+            if _is_spam_caption(caption):
+                continue
+
             # 텍스트 정제
             cleaned = cleaner.clean_caption(caption)
             if len(cleaned) < min_caption_len:
+                continue
+
+            # 정제 후에도 스팸 체크
+            if _is_spam_caption(cleaned):
                 continue
 
             # 중복 체크
